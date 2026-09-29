@@ -195,15 +195,25 @@ function groupLabel(id) {
   return g ? g.label : "";
 }
 
+// timer/running holds the current task. While running, `start` is when the
+// current stretch began; `carried` is the time from earlier stretches of the
+// same task before a pause (each already saved as its own session). While
+// paused, `paused: true` and `paused_at` replace `start`.
 function runningInfo(now) {
   const r = S.running;
   if (!r) return null;
+  const carried = typeof r.carried === "number" ? r.carried : 0;
+  if (r.paused) {
+    return {id: r.project, paused: true, start: null, pausedAt: parseTs(r.paused_at), elapsed: carried, weekPart: 0, carried};
+  }
   const start = parseTs(r.start);
   if (!start) return null;
   return {
     id: r.project,
+    paused: false,
     start,
-    elapsed: (now - start) / 1000,
+    carried,
+    elapsed: carried + (now - start) / 1000,
     weekPart: Math.max(0, (now - Math.max(start, S.weekStart)) / 1000),
   };
 }
@@ -231,17 +241,26 @@ function renderNow(now, run) {
   const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   let today = 0;
   for (const b of S.blocks) today += (b.end - b.start) / 1000;
-  if (run) today += Math.max(0, (now - Math.max(run.start, todayStart)) / 1000);
+  if (run && !run.paused) today += Math.max(0, (now - Math.max(run.start, todayStart)) / 1000);
 
   let html;
   if (run) {
     const mins = Math.floor(run.elapsed / 60);
     const h = Math.floor(mins / 60), m = mins % 60;
     const known = !!projectMap()[run.id];
+    const since = run.paused
+      ? `Paused${run.pausedAt ? " at " + clock(run.pausedAt) : ""}`
+      : `since ${clock(run.start)}${run.carried >= 60 ? ` (+${hm(run.carried)})` : ""}`;
     html = `<div class="task">${esc(labelOf(run.id))}</div>
       <div class="group">${esc(groupLabel(run.id))}${known ? "" : " · not in setup"}</div>
-      <div class="elapsed">${h}<span class="u">h</span>${pad(m)}<span class="u">m</span></div>
-      <div class="since">since ${clock(run.start)}</div>`;
+      <div class="elapsed${run.paused ? " paused" : ""}">${h}<span class="u">h</span>${pad(m)}<span class="u">m</span></div>
+      <div class="since">${esc(since)}</div>
+      <div class="ctrl-btns">
+        ${run.paused
+          ? `<button class="ctrl" data-act="resume" style="--c:${esc(colorOf(run.id))}">▶ Resume</button>`
+          : `<button class="ctrl" data-act="pause">❚❚ Pause</button>`}
+        <button class="ctrl" data-act="stop">■ Stop</button>
+      </div>`;
   } else {
     html = `<div class="task">Not tracking</div>
       <div class="group">Tap a task to start</div>`;
@@ -297,12 +316,14 @@ function renderGroups(now, run) {
 
     let tasks = "";
     for (const p of S.config.active.filter(p => p.group === g.id)) {
-      const on = run && run.id === p.id;
+      const on = run && run.id === p.id && !run.paused;
+      const held = run && run.id === p.id && run.paused;
       const color = esc(p.color || "#8E8E93");
-      tasks += `<button class="task-btn${on ? " on" : ""}" data-task="${esc(p.id)}"${on ? ` style="background:${color}"` : ""}>
+      const style = on ? ` style="background:${color}"` : held ? ` style="border-color:${color}"` : "";
+      tasks += `<button class="task-btn${on ? " on" : ""}${held ? " held" : ""}" data-task="${esc(p.id)}"${style}>
         <span class="sw" style="background:${color}"></span>
         <span class="name"><span class="nm">${esc(p.label)}</span>${p.due ? dueHtml(p.due) : ""}</span>
-        ${on ? `<span class="t">stop</span>` : ""}
+        ${on ? `<span class="t">pause</span>` : held ? `<span class="t">paused</span>` : ""}
       </button>`;
     }
     if (g.id !== "_other") {
@@ -347,7 +368,7 @@ function renderStrip(now, run) {
   const isWorkday = cfg.workdays.includes((now.getDay() + 6) % 7);
 
   const blocks = S.blocks.map(b => ({id: b.project, sid: b.id, start: b.start, end: b.end}));
-  if (run) blocks.push({id: run.id, sid: "running", start: new Date(Math.max(run.start, todayStart)), end: now});
+  if (run && !run.paused) blocks.push({id: run.id, sid: "running", start: new Date(Math.max(run.start, todayStart)), end: now});
 
   let lo = workStart, hi = workEnd;
   for (const b of blocks) {
@@ -467,6 +488,16 @@ function moverHtml(sid, current, when) {
 }
 
 function runningRowHtml(run) {
+  if (run.paused) {
+    return `<div class="row">
+      <span class="sw" style="background:${esc(colorOf(run.id))}"></span>
+      <span class="r-task">${esc(labelOf(run.id))}<span class="r-grp">${esc(groupLabel(run.id))}</span><span class="tag">paused</span></span>
+      <span class="r-note">Earlier stretches are saved below</span>
+      <span class="r-time">${run.pausedAt ? "paused at " + clock(run.pausedAt) : "paused"}</span>
+      <span class="r-dur">${hm(run.elapsed)}</span>
+      <span class="r-btns"><button class="pill" data-act="resume">Resume</button><button class="pill" data-act="stop">Stop</button></span>
+    </div>`;
+  }
   if (sessEdit === "running") return editorHtml("running", {project: run.id, start: toInput(run.start)});
   const btns = sessConfirm === "running"
     ? `<span class="q">Discard without saving?</span><button class="pill danger" data-act="discard-yes">Discard</button><button class="pill" data-act="cancel">Cancel</button>`
@@ -727,10 +758,17 @@ async function logChange(record) {
   await ref.set({week: key, entries});
 }
 
-async function closeTimer(r, now) {
-  const s = {id: newId(), project: r.project, start: r.start, end: fmt(now)};
+// Saves the current stretch as a session. Returns its length in seconds.
+async function saveStretch(r, now) {
   const start = parseTs(r.start);
-  if (start && now > start) await mutateWeek(weekKey(start), list => [...list, s]);
+  if (r.paused || !start || now <= start) return 0;
+  const s = {id: newId(), project: r.project, start: r.start, end: fmt(now)};
+  await mutateWeek(weekKey(start), list => [...list, s]);
+  return (now - start) / 1000;
+}
+
+async function closeTimer(r, now) {
+  await saveStretch(r, now);
   await db.doc("timer/running").delete();
 }
 
@@ -738,9 +776,39 @@ function startTask(project) {
   return act(async () => {
     const now = new Date();
     const snap = await db.doc("timer/running").get();
-    if (snap.exists && snap.data().project === project) return;
+    if (snap.exists && snap.data().project === project) {
+      if (snap.data().paused) await resumeFrom(snap.data(), now);
+      return;
+    }
     if (snap.exists) await closeTimer(snap.data(), now);
     await db.doc("timer/running").set({project, start: fmt(now)});
+  });
+}
+
+async function resumeFrom(r, now) {
+  const next = {project: r.project, start: fmt(now)};
+  if (r.carried) next.carried = r.carried;
+  await db.doc("timer/running").set(next);
+}
+
+function pauseTimer() {
+  return act(async () => {
+    const now = new Date();
+    const snap = await db.doc("timer/running").get();
+    if (!snap.exists || snap.data().paused) return;
+    const r = snap.data();
+    const secs = await saveStretch(r, now);
+    await db.doc("timer/running").set({
+      project: r.project, paused: true, paused_at: fmt(now),
+      carried: Math.round((typeof r.carried === "number" ? r.carried : 0) + secs),
+    });
+  });
+}
+
+function resumeTimer() {
+  return act(async () => {
+    const snap = await db.doc("timer/running").get();
+    if (snap.exists && snap.data().paused) await resumeFrom(snap.data(), new Date());
   });
 }
 
@@ -941,7 +1009,7 @@ function reassignRunning(project) {
     if (!snap.exists) throw new UserError("Nothing is running");
     const before = snap.data();
     if (before.project === project) return;
-    const after = {project, start: before.start};
+    const after = {...before, project};
     await db.doc("timer/running").set(after);
     await logChange({action: "reassign-running", before, after});
   });
@@ -997,11 +1065,12 @@ function updateRunning(f) {
     const snap = await db.doc("timer/running").get();
     if (!snap.exists) throw new UserError("Nothing is running");
     const before = snap.data();
+    if (before.paused) throw new UserError("Resume the timer to change its start time");
     checkProject(f.project, before.project);
     const start = keepSeconds(f.start, before.start);
     if (!start) throw new UserError("Start time is missing or invalid");
     if (parseTs(start) > new Date()) throw new UserError("Start can't be in the future");
-    const after = {project: f.project, start};
+    const after = {...before, project: f.project, start};
     if (after.project === before.project && after.start === before.start) return;
     await db.doc("timer/running").set(after);
     await logChange({action: "edit-running", before, after});
@@ -1101,7 +1170,7 @@ function runPendingCommand() {
   if (!p) { toast(`Stream Deck key points to a task that doesn't exist ("${id}"). Nothing changed.`, null, true); return; }
   const where = groupLabel(id);
   if (p.completed) { toast(`Stream Deck: ${p.label} is marked complete. Reopen it under Tasks to track it again.`, p.color, true); return; }
-  if (running && running.project === id) { toast(`Stream Deck: ${p.label} is already running`, p.color); return; }
+  if (running && running.project === id && !running.paused) { toast(`Stream Deck: ${p.label} is already running`, p.color); return; }
   startTask(id).then(ok => ok && toast(`Stream Deck: started ${p.label}${where ? " · " + where : ""}`, p.color));
 }
 
@@ -1136,6 +1205,9 @@ document.addEventListener("click", e => {
   const btn = e.target.closest("[data-act]");
   if (btn) {
     const a = btn.dataset.act, sid = btn.dataset.sid;
+    if (a === "pause") { pauseTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
+    if (a === "resume") { resumeTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
+    if (a === "stop") { stopTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
     if (a === "sessions") { openSessions(); return; }
     if (a === "tasklist") { view = "tasklist"; adding = null; completing = null; sessError = ""; redrawTaskList(); return; }
     if (view === "tasklist") {
@@ -1187,7 +1259,9 @@ document.addEventListener("click", e => {
   const task = e.target.closest("[data-task]");
   if (task) {
     const id = task.dataset.task;
-    if (running && running.project === id) stopTimer(); else startTask(id);
+    // Tapping the running task pauses it; tapping it again resumes.
+    if (running && running.project === id) (running.paused ? resumeTimer() : pauseTimer());
+    else startTask(id);
     return;
   }
   const add = e.target.closest("[data-add]");
