@@ -97,10 +97,12 @@ def load_config(warnings):
                 "id": g["id"],
                 "label": g.get("label") if isinstance(g.get("label"), str) else g["id"],
                 "weekly_target_hours": target if isinstance(target, (int, float)) else 0,
+                # "pace": false hides the ahead/behind line for a group.
+                "pace": g.get("pace") is not False,
             })
     if not groups:
         groups = [{"id": ALL_GROUP, "label": "This week",
-                   "weekly_target_hours": config["weekly_target_hours"]}]
+                   "weekly_target_hours": config["weekly_target_hours"], "pace": True}]
     group_ids = {g["id"] for g in groups}
 
     projects = []
@@ -206,7 +208,7 @@ def build_state():
     groups = [dict(g) for g in config["groups"]]
     in_other = any(p["group"] == OTHER_GROUP for p in config["projects"])
     if in_other or by_group.get(OTHER_GROUP) or running_group == OTHER_GROUP:
-        groups.append({"id": OTHER_GROUP, "label": "Other", "weekly_target_hours": 0})
+        groups.append({"id": OTHER_GROUP, "label": "Other", "weekly_target_hours": 0, "pace": False})
     for g in groups:
         g["closed_seconds"] = by_group.get(g["id"], 0)
     config["groups"] = groups
@@ -357,7 +359,7 @@ def init_groups():
         print(f"Backed up the old config to {backup}")
     raw["groups"] = [
         {"id": "refined-science", "label": "Refined Science", "weekly_target_hours": 40},
-        {"id": "cu", "label": "CU", "weekly_target_hours": 8},
+        {"id": "cu", "label": "CU", "weekly_target_hours": 8, "pace": False},
     ]
     write_config(raw)
     print(f"Added Refined Science (40 h) and CU (8 h) to {config_path}")

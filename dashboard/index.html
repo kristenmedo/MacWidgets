@@ -248,7 +248,7 @@ function renderGroups(now, run) {
   for (const g of groups) {
     const week = groupWeek(g, run);
     let pace = "";
-    if (g.weekly_target_hours > 0) {
+    if (g.pace && g.weekly_target_hours > 0) {
       const diff = week - expectedByNow(g.weekly_target_hours, now);
       if (Math.abs(diff) < 10 * 60) pace = `<div class="grp-pace">on pace</div>`;
       else if (diff < 0) pace = `<div class="grp-pace behind">${hm(-diff)} behind pace</div>`;

@@ -52,6 +52,8 @@ full screen there.
 - To rename, recolour, regroup or remove tasks, or to change the weekly goals,
   edit `~/.timetrack/config.json`. The page picks up the change within 5 seconds.
 - Starting a task while another runs stops the first one.
+- The "behind pace" line spreads a group's goal over your workdays. Add
+  `"pace": false` to a group in `config.json` to hide it (CU has this).
 
 ## If something's wrong
 
