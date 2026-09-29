@@ -32,9 +32,9 @@ let actionError = "";
 
 const DEFAULTS = {day_start: "08:30", day_hours: 8, workdays: [0, 1, 2, 3, 4]};
 const PALETTES = [
-  ["#6FA8C7", "#5E9C8F", "#8C9BD6", "#4F86A8", "#7FB8B0", "#6C7FB8"],
-  ["#D6A15E", "#C98579", "#CDB26A", "#B7876B", "#D98E9E", "#C4A27F"],
-  ["#A58FC9", "#9DB07A", "#C98FB7", "#8FA3A8"],
+  ["#0A84FF", "#30D158", "#64D2FF", "#7D7AFF", "#00C7BE", "#5AC8FA"],
+  ["#FF9F0A", "#FF453A", "#FFD60A", "#FF375F", "#FF6B35", "#E5B96B"],
+  ["#BF5AF2", "#A2D95A", "#FF7EB6", "#AC8E68"],
 ];
 
 // ---------------------------------------------------------------- time helpers
@@ -173,7 +173,7 @@ function projectMap() {
   return map;
 }
 function groupOf(id) { const p = projectMap()[id]; return p ? p.group : "_other"; }
-function colorOf(id) { const p = projectMap()[id]; return (p && p.color) || "#7C8B9C"; }
+function colorOf(id) { const p = projectMap()[id]; return (p && p.color) || "#8E8E93"; }
 function labelOf(id) { const p = projectMap()[id]; return p ? p.label : id; }
 function groupLabel(id) {
   const g = S.config.groups.find(g => g.id === groupOf(id));
@@ -266,7 +266,7 @@ function renderGroups(now, run) {
     let tasks = "";
     for (const p of S.config.projects.filter(p => p.group === g.id)) {
       const on = run && run.id === p.id;
-      const color = esc(p.color || "#7C8B9C");
+      const color = esc(p.color || "#8E8E93");
       tasks += `<button class="task-btn${on ? " on" : ""}" data-task="${esc(p.id)}"${on ? ` style="background:${color}"` : ""}>
         <span class="sw" style="background:${color}"></span>
         <span class="name">${esc(p.label)}</span>

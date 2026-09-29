@@ -1,15 +1,20 @@
 <title>Timecard</title>
 <style>
   :root {
-    --ground: #151B23;
-    --tape: #10151C;
-    --rule: #2C3745;
-    --text: #DDE4EB;
-    --muted: #7C8B9C;
-    --dim: #4C5A6B;
-    --good: #7FBF8A;
-    --bad: #7A3B37;
-    --err: #E0A29C;
+    /* Matched to the Stream Deck beside it: black ground, dark keys with grey edges. */
+    --ground: #000000;
+    --tape: #0C0C0D;       /* key face */
+    --key-edge: #48484A;   /* key outline */
+    --rule: #2C2C2E;
+    --line: #1C1C1E;
+    --work: #141416;
+    --text: #F5F5F7;
+    --muted: #8E8E93;
+    --dim: #48484A;
+    --good: #30D158;
+    --bad: #B3261E;
+    --err: #FF8A80;
+    --key-radius: 0.65rem;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
@@ -64,8 +69,8 @@
   }
   .task-btn {
     display: flex; align-items: center; gap: 0.5rem; min-width: 0;
-    padding: 0 0.7rem; border-radius: 0.35rem; cursor: pointer;
-    background: var(--tape); border: 1px solid var(--rule); text-align: left;
+    padding: 0 0.7rem; border-radius: var(--key-radius); cursor: pointer;
+    background: var(--tape); border: 2px solid var(--key-edge); text-align: left;
     font-size: 0.8rem;
   }
   .task-btn .sw { width: 0.35rem; align-self: stretch; margin: 0.45rem 0; border-radius: 0.2rem; flex: none; }
@@ -75,23 +80,23 @@
   .task-btn.on .sw { background: var(--ground) !important; opacity: 0.35; }
   .task-btn.on .t { color: var(--ground); opacity: 0.75; }
   .task-btn:active { transform: translateY(1px); }
-  .add-btn { background: none; border: 1px dashed var(--dim); color: var(--muted); justify-content: center; }
+  .add-btn { background: none; border: 2px dashed var(--dim); color: var(--muted); justify-content: center; }
   .add-form { display: flex; gap: 0.3rem; grid-column: span 2; }
   .add-form input {
-    flex: 1; min-width: 0; background: var(--tape); border: 1px solid var(--muted);
-    border-radius: 0.35rem; padding: 0 0.6rem; font-size: 0.8rem; outline: none;
+    flex: 1; min-width: 0; background: var(--tape); border: 2px solid var(--muted);
+    border-radius: var(--key-radius); padding: 0 0.6rem; font-size: 0.8rem; outline: none;
     -webkit-user-select: text; user-select: text;
   }
-  .add-form button { background: var(--rule); border: 0; border-radius: 0.35rem; padding: 0 0.7rem; font-size: 0.75rem; cursor: pointer; }
+  .add-form button { background: var(--rule); border: 0; border-radius: var(--key-radius); padding: 0 0.7rem; font-size: 0.75rem; cursor: pointer; }
   .grp-empty { color: var(--dim); font-size: 0.75rem; }
 
   #now .open-sessions { margin-top: 0.8rem; align-self: flex-start; }
   .pill {
-    background: var(--tape); border: 1px solid var(--rule); border-radius: 0.35rem;
-    padding: 0.35rem 0.75rem; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
+    background: var(--tape); border: 2px solid var(--key-edge); border-radius: 0.5rem;
+    padding: 0.3rem 0.75rem; font-size: 0.75rem; cursor: pointer; white-space: nowrap;
     text-decoration: none; color: var(--text); display: inline-block;
   }
-  .pill.strong { background: var(--rule); }
+  .pill.strong { background: var(--rule); border-color: var(--muted); }
   .pill.danger { background: var(--bad); border-color: var(--bad); }
   .pill:active { transform: translateY(1px); }
 
@@ -109,9 +114,8 @@
   .row {
     display: grid; align-items: center; gap: 0.7rem; font-size: 0.75rem;
     grid-template-columns: 0.35rem minmax(0, 1.3fr) minmax(0, 2fr) 10rem 4rem auto;
-    min-height: 2.1rem; padding: 0.2rem 0; border-bottom: 1px solid #1E2631;
+    min-height: 2.1rem; padding: 0.2rem 0; border-bottom: 1px solid var(--line);
   }
-  .row.hl { background: #1B232E; }
   .row .sw { width: 0.35rem; height: 1.2rem; border-radius: 0.2rem; }
   .r-task { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .r-grp { color: var(--muted); font-size: 0.65rem; margin-left: 0.3rem; }
@@ -123,7 +127,7 @@
   .tag { font-size: 0.55rem; color: var(--muted); border: 1px solid var(--dim); border-radius: 0.2rem; padding: 0 0.25rem; margin-left: 0.35rem; vertical-align: 0.1em; }
   .editor {
     display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; font-size: 0.75rem;
-    padding: 0.5rem 0.6rem; margin: 0.3rem 0; background: var(--tape); border: 1px solid var(--muted); border-radius: 0.35rem;
+    padding: 0.5rem 0.6rem; margin: 0.3rem 0; background: var(--tape); border: 2px solid var(--key-edge); border-radius: var(--key-radius);
   }
   .editor select, .editor input {
     background: var(--ground); border: 1px solid var(--rule); border-radius: 0.3rem;
@@ -139,13 +143,13 @@
 
   /* Day strip */
   #day { display: grid; grid-template-rows: minmax(0, 1fr) 1.2rem; min-height: 0; }
-  #strip { position: relative; background: var(--tape); border-radius: 0.3rem; overflow: hidden; }
-  .work { position: absolute; top: 0; bottom: 0; background: #19212B; }
+  #strip { position: relative; background: var(--tape); border: 2px solid var(--key-edge); border-radius: var(--key-radius); overflow: hidden; }
+  .work { position: absolute; top: 0; bottom: 0; background: var(--work); }
   .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--rule); }
   .blk {
     cursor: pointer;
     position: absolute; top: 0.9rem; bottom: 0.9rem; min-width: 2px;
-    border-radius: 0.2rem; box-shadow: inset -1px 0 0 var(--tape), inset 1px 0 0 var(--tape);
+    border-radius: 0.35rem; box-shadow: inset -1px 0 0 var(--tape), inset 1px 0 0 var(--tape);
     overflow: hidden; color: var(--ground); font-size: 0.7rem; font-weight: 600;
     padding: 0.35rem 0.45rem; white-space: nowrap; text-overflow: ellipsis;
   }
@@ -226,9 +230,9 @@ let actionError = "";
 
 const DEFAULTS = {day_start: "08:30", day_hours: 8, workdays: [0, 1, 2, 3, 4]};
 const PALETTES = [
-  ["#6FA8C7", "#5E9C8F", "#8C9BD6", "#4F86A8", "#7FB8B0", "#6C7FB8"],
-  ["#D6A15E", "#C98579", "#CDB26A", "#B7876B", "#D98E9E", "#C4A27F"],
-  ["#A58FC9", "#9DB07A", "#C98FB7", "#8FA3A8"],
+  ["#0A84FF", "#30D158", "#64D2FF", "#7D7AFF", "#00C7BE", "#5AC8FA"],
+  ["#FF9F0A", "#FF453A", "#FFD60A", "#FF375F", "#FF6B35", "#E5B96B"],
+  ["#BF5AF2", "#A2D95A", "#FF7EB6", "#AC8E68"],
 ];
 
 // ---------------------------------------------------------------- time helpers
@@ -367,7 +371,7 @@ function projectMap() {
   return map;
 }
 function groupOf(id) { const p = projectMap()[id]; return p ? p.group : "_other"; }
-function colorOf(id) { const p = projectMap()[id]; return (p && p.color) || "#7C8B9C"; }
+function colorOf(id) { const p = projectMap()[id]; return (p && p.color) || "#8E8E93"; }
 function labelOf(id) { const p = projectMap()[id]; return p ? p.label : id; }
 function groupLabel(id) {
   const g = S.config.groups.find(g => g.id === groupOf(id));
@@ -460,7 +464,7 @@ function renderGroups(now, run) {
     let tasks = "";
     for (const p of S.config.projects.filter(p => p.group === g.id)) {
       const on = run && run.id === p.id;
-      const color = esc(p.color || "#7C8B9C");
+      const color = esc(p.color || "#8E8E93");
       tasks += `<button class="task-btn${on ? " on" : ""}" data-task="${esc(p.id)}"${on ? ` style="background:${color}"` : ""}>
         <span class="sw" style="background:${color}"></span>
         <span class="name">${esc(p.label)}</span>
