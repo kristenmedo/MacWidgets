@@ -150,6 +150,10 @@
   .ctrl[data-act=resume] { background: var(--c); color: var(--ground); border-color: transparent; }
   .ctrl:active { transform: translateY(1px); }
   .task-btn.held { border-style: dashed; }
+  .ctrl.cont { background: var(--tape); border-color: var(--c); flex: none; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  .n-str { color: var(--text); }
+  .stretch-list { display: flex; flex-direction: column; gap: 0.3rem; }
+  .stretch { display: flex; align-items: center; gap: 0.4rem; }
   .task-btn.held .t { color: var(--text); }
 
   /* Tasks: due dates and completion */
@@ -376,6 +380,22 @@ function allSessions() {
   return out;
 }
 
+// A session is one or more stretches of work on a task. Older sessions have
+// only start/end; sessions that were paused and resumed, or continued later,
+// also carry stretches: [[start, end], ...]. start/end always span them all.
+function stretchesOf(s) {
+  if (Array.isArray(s.stretches) && s.stretches.length) {
+    return s.stretches.filter(x => Array.isArray(x) && parseTs(x[0]) && parseTs(x[1])).map(x => [x[0], x[1]]);
+  }
+  return [[s.start, s.end]];
+}
+
+function workedSecs(s) {
+  let t = 0;
+  for (const [a, b] of stretchesOf(s)) t += Math.max(0, (parseTs(b) - parseTs(a)) / 1000);
+  return t;
+}
+
 // Builds the same shape the Edge dashboard drew from, out of the stored docs.
 function buildState(now) {
   const cfg = config || {};
@@ -410,14 +430,16 @@ function buildState(now) {
   const blocks = [];
   const sessions = allSessions();
   for (const s of sessions) {
-    const a = parseTs(s.start), b = parseTs(s.end);
-    const secs = Math.max(0, (Math.min(b, now) - Math.max(a, weekStart)) / 1000);
-    if (secs > 0) {
-      const g = projectGroup[s.project] || "_other";
-      byGroup[g] = (byGroup[g] || 0) + secs;
-    }
-    if (b > today && a < tomorrow) {
-      blocks.push({id: s.id, project: s.project, start: new Date(Math.max(a, today)), end: new Date(Math.min(b, tomorrow))});
+    for (const [sa, sb] of stretchesOf(s)) {
+      const a = parseTs(sa), b = parseTs(sb);
+      const secs = Math.max(0, (Math.min(b, now) - Math.max(a, weekStart)) / 1000);
+      if (secs > 0) {
+        const g = projectGroup[s.project] || "_other";
+        byGroup[g] = (byGroup[g] || 0) + secs;
+      }
+      if (b > today && a < tomorrow) {
+        blocks.push({id: s.id, project: s.project, start: new Date(Math.max(a, today)), end: new Date(Math.min(b, tomorrow))});
+      }
     }
   }
   blocks.sort((x, y) => x.start - y.start);
@@ -526,6 +548,11 @@ function renderNow(now, run) {
   } else {
     html = `<div class="task">Not tracking</div>
       <div class="group">Tap a task to start</div>`;
+    const last = S.sessions[0];
+    const lastTask = last && projectMap()[last.project];
+    if (last && lastTask && !lastTask.completed && dayKey(parseTs(last.end)) === dayKey(now)) {
+      html += `<div class="ctrl-btns"><button class="ctrl cont" data-act="continue" data-sid="${esc(last.id)}" style="--c:${esc(colorOf(last.project))}">↻ Continue ${esc(lastTask.label)}</button></div>`;
+    }
   }
   if (view === "tasks") html += `<div class="now-btns"><button class="pill" data-act="sessions">Sessions</button><button class="pill" data-act="tasklist">Tasks</button></div>`;
   html += `<div class="today"><b>${hm(today)}</b> today of ${S.config.day_hours}h</div>`;
@@ -698,10 +725,18 @@ function taskOptions(selected) {
 function editorHtml(kind, s) {
   const hasEnd = kind !== "running";
   const k = esc(kind);
+  const pairs = s.stretches || [[s.start, s.end]];
+  const times = hasEnd
+    ? `<div class="stretch-list">${pairs.map(([a, b], i) => `<span class="stretch">
+        ${pairs.length > 1 ? `<span class="lbl">${i + 1}.</span>` : ""}
+        <input id="ed-start-${k}-${i}" type="datetime-local" name="start-${i}" step="60" value="${esc(a)}" aria-label="Start ${i + 1}">
+        <span class="lbl">to</span>
+        <input id="ed-end-${k}-${i}" type="datetime-local" name="end-${i}" step="60" value="${esc(b)}" aria-label="End ${i + 1}">
+      </span>`).join("")}</div>`
+    : `<input id="ed-start-${k}" type="datetime-local" name="start-0" step="60" value="${esc(s.start)}" aria-label="Start"><span class="lbl">still running</span>`;
   return `<form class="editor" data-kind="${k}">
     <select id="ed-project-${k}" name="project" aria-label="Task">${taskOptions(s.project)}</select>
-    <input id="ed-start-${k}" type="datetime-local" name="start" step="60" value="${esc(s.start)}" aria-label="Start">
-    ${hasEnd ? `<span class="lbl">to</span><input id="ed-end-${k}" type="datetime-local" name="end" step="60" value="${esc(s.end)}" aria-label="End">` : `<span class="lbl">still running</span>`}
+    ${times}
     ${hasEnd ? `<input id="ed-note-${k}" name="note" maxlength="500" placeholder="Note: what was this for?" value="${esc(s.note || "")}">` : ""}
     <button type="submit" class="pill strong">Save</button>
     <button type="button" class="pill" data-act="cancel">Cancel</button>
@@ -710,20 +745,24 @@ function editorHtml(kind, s) {
 
 function rowHtml(s) {
   const start = parseTs(s.start), end = parseTs(s.end);
+  const parts = stretchesOf(s);
   if (sessEdit === s.id) {
-    return editorHtml(s.id, {project: s.project, start: toInput(start), end: toInput(end), note: s.note});
+    return editorHtml(s.id, {project: s.project, note: s.note,
+      stretches: parts.map(([a, b]) => [toInput(parseTs(a)), toInput(parseTs(b))])});
   }
   const crosses = dayKey(start) !== dayKey(end);
-  const tags = (s.source === "manual" ? `<span class="tag">added</span>` : "") + (s.edited ? `<span class="tag">edited</span>` : "");
+  const live = S.running && S.running.session_id === s.id;
+  const tags = (s.source === "manual" ? `<span class="tag">added</span>` : "") + (s.edited ? `<span class="tag">edited</span>` : "")
+    + (live ? `<span class="tag">${S.running.paused ? "paused" : "running"}</span>` : "");
   const btns = sessConfirm === s.id
     ? `<span class="q">Delete?</span><button class="pill danger" data-act="del-yes" data-sid="${esc(s.id)}">Delete</button><button class="pill" data-act="cancel">Cancel</button>`
-    : `<button class="pill" data-act="edit" data-sid="${esc(s.id)}">Edit</button><button class="pill" data-act="move" data-sid="${esc(s.id)}">Move</button><button class="pill" data-act="del" data-sid="${esc(s.id)}">Delete</button>`;
+    : `${live ? "" : `<button class="pill" data-act="continue" data-sid="${esc(s.id)}" title="Restart the timer on this session">Continue</button>`}<button class="pill" data-act="edit" data-sid="${esc(s.id)}">Edit</button><button class="pill" data-act="move" data-sid="${esc(s.id)}">Move</button><button class="pill" data-act="del" data-sid="${esc(s.id)}">Delete</button>`;
   return `<div class="row">
     <span class="sw" style="background:${esc(colorOf(s.project))}"></span>
     <span class="r-task">${esc(labelOf(s.project))}<span class="r-grp">${esc(groupLabel(s.project))}</span>${tags}</span>
-    <span class="r-note">${esc(s.note || "")}</span>
+    <span class="r-note"${parts.length > 1 ? ` title="${esc(parts.map(([a, b]) => clock(parseTs(a)) + " – " + clock(parseTs(b))).join(", "))}"` : ""}>${parts.length > 1 ? `<span class="n-str">${parts.length} stretches</span>${s.note ? " · " : ""}` : ""}${esc(s.note || "")}</span>
     <span class="r-time">${clock(start)} – ${clock(end)}${crosses ? " +1d" : ""}</span>
-    <span class="r-dur">${hm((end - start) / 1000)}</span>
+    <span class="r-dur">${hm(workedSecs(s))}</span>
     <span class="r-btns">${btns}</span>
   </div>${sessMove === s.id ? moverHtml(s.id, s.project, `${clock(start)} – ${clock(end)}`) : ""}`;
 }
@@ -834,7 +873,7 @@ function renderSessions(now, run) {
         day = key;
         let total = 0;
         for (let j = i; j < list.length && dayKey(parseTs(list[j].start)) === key; j++) {
-          total += (parseTs(list[j].end) - parseTs(list[j].start)) / 1000;
+          total += workedSecs(list[j]);
         }
         body += `<div class="day-h"><span>${esc(dayLabel(parseTs(s.start), now))}</span><span>${hm(total)}</span></div>`;
       }
@@ -1020,13 +1059,39 @@ async function logChange(record) {
   await ref.set({week: key, entries});
 }
 
-// Saves the current stretch as a session. Returns its length in seconds.
+// Adds a finished stretch to the session the timer belongs to (after a pause
+// or a Continue), or starts a new session. Returns where it went.
+async function appendStretch(r, a, b) {
+  if (r.session_id && r.session_week) {
+    let found = false;
+    await mutateWeek(r.session_week, list => {
+      const i = list.findIndex(x => x.id === r.session_id);
+      if (i < 0 || list[i].project !== r.project) return null;
+      const s = {...list[i]};
+      const parts = stretchesOf(s);
+      parts.push([a, b]);
+      parts.sort((x, y) => (x[0] < y[0] ? -1 : 1));
+      s.stretches = parts;
+      s.start = parts[0][0];
+      s.end = parts.reduce((m, x) => (x[1] > m ? x[1] : m), parts[0][1]);
+      list[i] = s;
+      found = true;
+      return list;
+    });
+    if (found) return {id: r.session_id, week: r.session_week};
+  }
+  const s = {id: newId(), project: r.project, start: a, end: b};
+  const key = weekKey(parseTs(a));
+  await mutateWeek(key, list => [...list, s]);
+  return {id: s.id, week: key};
+}
+
+// Saves the current stretch. Returns its length and the session it joined.
 async function saveStretch(r, now) {
   const start = parseTs(r.start);
-  if (r.paused || !start || now <= start) return 0;
-  const s = {id: newId(), project: r.project, start: r.start, end: fmt(now)};
-  await mutateWeek(weekKey(start), list => [...list, s]);
-  return (now - start) / 1000;
+  if (r.paused || !start || now <= start) return {secs: 0, link: {id: r.session_id, week: r.session_week}};
+  const link = await appendStretch(r, r.start, fmt(now));
+  return {secs: (now - start) / 1000, link};
 }
 
 async function closeTimer(r, now) {
@@ -1050,7 +1115,31 @@ function startTask(project) {
 async function resumeFrom(r, now) {
   const next = {project: r.project, start: fmt(now)};
   if (r.carried) next.carried = r.carried;
+  if (r.session_id) { next.session_id = r.session_id; next.session_week = r.session_week; }
   await db.doc("timer/running").set(next);
+}
+
+// Restarts the timer on an existing session: new time is added to it.
+function continueSession(id) {
+  return act(async () => {
+    const now = new Date();
+    const known = findSession(id);
+    if (!known) throw new UserError("That session no longer exists");
+    const snap = await db.doc("timer/running").get();
+    if (snap.exists) {
+      const r = snap.data();
+      if (r.session_id === id && r.paused) { await resumeFrom(r, now); return; }
+      if (r.session_id === id) return;
+      await closeTimer(r, now);
+    }
+    const fresh = await db.doc("weeks/" + known.week).get();
+    const current = fresh.exists ? (fresh.data().sessions || []).find(x => x.id === id) : null;
+    if (!current) throw new UserError("That session was changed elsewhere. Try again.");
+    await db.doc("timer/running").set({
+      project: current.project, start: fmt(now), carried: Math.round(workedSecs(current)),
+      session_id: id, session_week: known.week,
+    });
+  });
 }
 
 function pauseTimer() {
@@ -1059,11 +1148,13 @@ function pauseTimer() {
     const snap = await db.doc("timer/running").get();
     if (!snap.exists || snap.data().paused) return;
     const r = snap.data();
-    const secs = await saveStretch(r, now);
-    await db.doc("timer/running").set({
+    const {secs, link} = await saveStretch(r, now);
+    const next = {
       project: r.project, paused: true, paused_at: fmt(now),
       carried: Math.round((typeof r.carried === "number" ? r.carried : 0) + secs),
-    });
+    };
+    if (link && link.id) { next.session_id = link.id; next.session_week = link.week; }
+    await db.doc("timer/running").set(next);
   });
 }
 
@@ -1198,7 +1289,8 @@ function addSession(f) {
   return act(async () => {
     const now = new Date();
     checkProject(f.project);
-    const start = keepSeconds(f.start, null), end = keepSeconds(f.end, null);
+    const first = (f.stretches || [])[0] || [f.start, f.end];
+    const start = keepSeconds(first[0], null), end = keepSeconds(first[1], null);
     checkTimes(start, end, now);
     const s = {id: newId(), project: f.project, start, end, source: "manual"};
     const note = cleanNote(f.note);
@@ -1224,14 +1316,26 @@ function updateSession(id, f) {
       if (i < 0) throw new UserError("That session was changed elsewhere. Close this and try again.");
       before = list[i];
       checkProject(f.project, before.project);
-      const start = keepSeconds(f.start, before.start), end = keepSeconds(f.end, before.end);
-      checkTimes(start, end, now);
+      const old = stretchesOf(before);
+      const parts = (f.stretches || []).map(([a, b], n) => {
+        const sa = keepSeconds(a, old[n] && old[n][0]), sb = keepSeconds(b, old[n] && old[n][1]);
+        checkTimes(sa, sb, now);
+        return [sa, sb];
+      });
+      if (!parts.length) throw new UserError("Start time is missing or invalid");
+      parts.sort((x, y) => (x[0] < y[0] ? -1 : 1));
+      for (let n = 1; n < parts.length; n++) {
+        if (parts[n][0] < parts[n - 1][1]) throw new UserError("Two stretches overlap. Adjust their times.");
+      }
+      const start = parts[0][0], end = parts[parts.length - 1][1];
       after = {...before, project: f.project, start, end};
+      if (parts.length > 1) after.stretches = parts; else delete after.stretches;
       const note = cleanNote(f.note);
       if (note) after.note = note; else delete after.note;
       delete after.edited;
       const same = after.project === before.project && after.start === before.start
-        && after.end === before.end && (after.note || "") === (before.note || "");
+        && after.end === before.end && (after.note || "") === (before.note || "")
+        && JSON.stringify(stretchesOf(after)) === JSON.stringify(old);
       if (same) { after = null; return null; }
       after.edited = fmt(now);
       if (weekKey(parseTs(start)) === oldKey) { list[i] = after; return list; }
@@ -1354,11 +1458,12 @@ function csvCell(v) {
 }
 
 async function exportCsv() {
-  const rows = [["date", "group", "task", "task_id", "start", "end", "hours", "source", "note", "edited"]];
+  const rows = [["date", "group", "task", "task_id", "start", "end", "hours", "stretches", "source", "note", "edited"]];
   for (const s of [...S.sessions].reverse()) {
-    const a = parseTs(s.start), b = parseTs(s.end);
-    rows.push([dayKey(a), groupLabel(s.project) || "Other", labelOf(s.project), s.project, s.start, s.end,
-      ((b - a) / 3600000).toFixed(2), s.source || "timer", s.note || "", s.edited || ""]);
+    const parts = stretchesOf(s);
+    rows.push([dayKey(parseTs(s.start)), groupLabel(s.project) || "Other", labelOf(s.project), s.project, s.start, s.end,
+      (workedSecs(s) / 3600).toFixed(2), parts.map(([a, b]) => `${a.slice(11, 16)}-${b.slice(11, 16)}`).join("; "),
+      s.source || "timer", s.note || "", s.edited || ""]);
   }
   const data = rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n";
   try {
@@ -1469,6 +1574,15 @@ document.addEventListener("click", e => {
     const a = btn.dataset.act, sid = btn.dataset.sid;
     if (a === "pause") { pauseTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
     if (a === "resume") { resumeTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
+    if (a === "continue") {
+      const sid = btn.dataset.sid;
+      continueSession(sid).then(ok => {
+        if (!ok) return;
+        if (view === "sessions") redrawSessions();
+        toast(`Continuing ${labelOf((findSession(sid) || {}).project)}`, colorOf((findSession(sid) || {}).project));
+      });
+      return;
+    }
     if (a === "stop") { stopTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
     if (a === "sessions") { openSessions(); return; }
     if (a === "tasklist") { view = "tasklist"; adding = null; completing = null; sessError = ""; redrawTaskList(); return; }
@@ -1563,7 +1677,9 @@ document.addEventListener("submit", async e => {
   if (editor) {
     const kind = editor.dataset.kind;
     const v = name => (editor.querySelector(`[name=${name}]`) || {}).value || "";
-    const f = {project: v("project"), start: v("start"), end: v("end"), note: v("note")};
+    const stretches = [];
+    for (let i = 0; editor.querySelector(`[name=start-${i}]`); i++) stretches.push([v(`start-${i}`), v(`end-${i}`)]);
+    const f = {project: v("project"), start: v("start-0"), end: v("end-0"), note: v("note"), stretches};
     const ok = kind === "new" ? await addSession(f)
       : kind === "running" ? await updateRunning(f)
       : await updateSession(kind, f);
