@@ -13,6 +13,9 @@ Environment:
     TIMECARD_PORT   port (default 8765)
 """
 
+import hashlib
+import csv
+import io
 import json
 import os
 import re
@@ -135,28 +138,46 @@ def parse_hhmm(value):
     return None
 
 
+def read_entry_lines():
+    """entries.jsonl as a list of raw lines, blank lines dropped."""
+    try:
+        with open(DATA_DIR / "entries.jsonl", encoding="utf-8") as f:
+            return [line.rstrip("\r\n") for line in f if line.strip()]
+    except FileNotFoundError:
+        return []
+
+
+def line_id(index, raw):
+    """A session id: its line number plus a fingerprint of the line, so an edit
+    can't land on the wrong line if the file changed in the meantime."""
+    return f"{index}-{hashlib.sha1(raw.encode()).hexdigest()[:10]}"
+
+
+def parse_entry(raw):
+    try:
+        obj = json.loads(raw)
+        start, end = parse_ts(obj.get("start")), parse_ts(obj.get("end"))
+    except (ValueError, AttributeError):
+        return None
+    if start is None or end is None or end < start:
+        return None
+    return str(obj.get("project", "")), start, end
+
+
 def load_entries(warnings):
-    path = DATA_DIR / "entries.jsonl"
+    """Finished sessions as (project, start, end, id) tuples."""
     entries, bad = [], 0
     try:
-        with open(path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    obj = json.loads(line)
-                    start, end = parse_ts(obj.get("start")), parse_ts(obj.get("end"))
-                except (ValueError, AttributeError):
-                    start = end = None
-                if start is None or end is None or end < start:
-                    bad += 1
-                    continue
-                entries.append((str(obj.get("project", "")), start, end))
-    except FileNotFoundError:
-        pass
+        lines = read_entry_lines()
     except OSError as exc:
         warnings.append(f"entries.jsonl unreadable ({exc.__class__.__name__})")
+        lines = []
+    for index, raw in enumerate(lines):
+        parsed = parse_entry(raw)
+        if parsed is None:
+            bad += 1
+            continue
+        entries.append(parsed + (line_id(index, raw),))
     if bad:
         warnings.append(f"Skipped {bad} unreadable line{'s' if bad != 1 else ''} in entries.jsonl")
     return entries
@@ -196,7 +217,7 @@ def build_state():
 
     project_group = {p["id"]: p["group"] for p in config["projects"]}
     by_group = {}
-    for p, s, e in entries:
+    for p, s, e, _ in entries:
         seconds = overlap(s, e, week_start, now)
         if seconds:
             g = project_group.get(p, OTHER_GROUP)
@@ -213,8 +234,8 @@ def build_state():
         g["closed_seconds"] = by_group.get(g["id"], 0)
     config["groups"] = groups
     blocks = [
-        {"project": p, "start": max(s, today).strftime(FMT), "end": min(e, tomorrow).strftime(FMT)}
-        for p, s, e in sorted(entries, key=lambda x: x[1])
+        {"id": sid, "project": p, "start": max(s, today).strftime(FMT), "end": min(e, tomorrow).strftime(FMT)}
+        for p, s, e, sid in sorted(entries, key=lambda x: x[1])
         if e > today and s < tomorrow
     ]
 
@@ -231,7 +252,7 @@ def build_state():
 
 # ---------------------------------------------------------------- writing
 
-def append_entry(project, start, end):
+def append_line(line):
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     path = DATA_DIR / "entries.jsonl"
     needs_newline = False
@@ -239,11 +260,14 @@ def append_entry(project, start, end):
         with open(path, "rb") as f:
             f.seek(-1, os.SEEK_END)
             needs_newline = f.read(1) != b"\n"
-    line = json.dumps({"project": project, "start": start, "end": end}) + "\n"
     with open(path, "a", encoding="utf-8") as f:
-        f.write(("\n" if needs_newline else "") + line)
+        f.write(("\n" if needs_newline else "") + line + "\n")
         f.flush()
         os.fsync(f.fileno())
+
+
+def append_entry(project, start, end):
+    append_line(json.dumps({"project": project, "start": start, "end": end}))
 
 
 def write_running(project, start):
@@ -281,6 +305,17 @@ def start_project(project):
         return
     stop_running(now)
     write_running(project, now.strftime(FMT))
+
+
+def start_task(project):
+    check_project(project)
+    start_project(project)
+
+
+def add_task_or_fail(group_id, label):
+    error = add_task(group_id, label)
+    if error:
+        raise UserError(error)
 
 
 def write_config(raw):
@@ -370,6 +405,236 @@ def init_groups():
     return 0
 
 
+class UserError(Exception):
+    """A request that can't be carried out, with a message for the page."""
+
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.status = status
+
+
+def write_entry_lines(lines):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    fd, tmp = tempfile.mkstemp(dir=DATA_DIR, prefix=".entries.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write("".join(line + "\n" for line in lines))
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, DATA_DIR / "entries.jsonl")
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def list_sessions():
+    sessions = []
+    for index, raw in enumerate(read_entry_lines()):
+        parsed = parse_entry(raw)
+        if parsed is None:
+            continue
+        obj = json.loads(raw)
+        project, start, end = parsed
+        sessions.append({
+            "id": line_id(index, raw),
+            "project": project,
+            "start": start.strftime(FMT),
+            "end": end.strftime(FMT),
+            "note": obj.get("note") if isinstance(obj.get("note"), str) else "",
+            "source": obj.get("source") if isinstance(obj.get("source"), str) else "timer",
+            "edited": obj.get("edited") if isinstance(obj.get("edited"), str) else "",
+        })
+    sessions.sort(key=lambda x: x["start"], reverse=True)
+    return sessions
+
+
+def audit(action, **details):
+    """Appends one line to audit.jsonl for every change to recorded time.
+    Nothing in the dashboard edits or removes this file."""
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    record = {"at": datetime.now().strftime(FMT), "action": action}
+    record.update(details)
+    with open(DATA_DIR / "audit.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(record) + "\n")
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def clean_note(note):
+    note = " ".join(str(note or "").split())
+    if len(note) > 500:
+        raise UserError("Note is too long (500 characters max)")
+    return note
+
+
+def parse_input_ts(value, name):
+    """Accepts what a datetime-local field sends (no seconds) or tt's format."""
+    if isinstance(value, str):
+        for fmt in (FMT, "%Y-%m-%dT%H:%M"):
+            try:
+                return datetime.strptime(value, fmt)
+            except ValueError:
+                pass
+    raise UserError(f"{name} time is missing or invalid")
+
+
+def keep_seconds(new, original):
+    """Time fields only go to the minute. If the minute is unchanged, keep the
+    original timestamp so an untouched field doesn't count as an edit."""
+    old = parse_ts(original)
+    if old is not None and old.replace(second=0) == new.replace(second=0):
+        return old
+    return new
+
+
+def check_times(start, end, now):
+    if end <= start:
+        raise UserError("End must be after start")
+    if end > now + timedelta(minutes=1):
+        raise UserError("End can't be in the future")
+
+
+def check_project(project, allowed_extra=None):
+    known = {p["id"] for p in load_config([])["projects"]}
+    if project not in known and project != allowed_extra:
+        raise UserError(f"Unknown task {project!r}")
+
+
+def find_line(lines, sid):
+    try:
+        index = int(str(sid).split("-", 1)[0])
+    except ValueError:
+        raise UserError("Unknown session")
+    if not 0 <= index < len(lines) or line_id(index, lines[index]) != sid:
+        raise UserError("That session changed since the list loaded. Try again.", 409)
+    return index
+
+
+def update_session(sid, project, start, end, note):
+    now = datetime.now()
+    lines = read_entry_lines()
+    index = find_line(lines, sid)
+    before = json.loads(lines[index])
+    obj = dict(before)
+    check_project(project, allowed_extra=obj.get("project"))
+    start_dt = keep_seconds(parse_input_ts(start, "Start"), obj.get("start"))
+    end_dt = keep_seconds(parse_input_ts(end, "End"), obj.get("end"))
+    check_times(start_dt, end_dt, now)
+    obj.update({"project": project, "start": start_dt.strftime(FMT), "end": end_dt.strftime(FMT)})
+    note = clean_note(note)
+    if note:
+        obj["note"] = note
+    else:
+        obj.pop("note", None)
+    if obj == before:
+        return
+    obj["edited"] = now.strftime(FMT)
+    lines[index] = json.dumps(obj)
+    write_entry_lines(lines)
+    audit("edit", before=before, after=obj)
+
+
+def delete_session(sid):
+    lines = read_entry_lines()
+    index = find_line(lines, sid)
+    removed = json.loads(lines[index])
+    del lines[index]
+    write_entry_lines(lines)
+    audit("delete", before=removed)
+
+
+def add_session(project, start, end, note):
+    check_project(project)
+    start_dt, end_dt = parse_input_ts(start, "Start"), parse_input_ts(end, "End")
+    check_times(start_dt, end_dt, datetime.now())
+    entry = {"project": project, "start": start_dt.strftime(FMT), "end": end_dt.strftime(FMT),
+             "source": "manual"}
+    note = clean_note(note)
+    if note:
+        entry["note"] = note
+    append_line(json.dumps(entry))
+    audit("add", after=entry)
+
+
+def export_csv():
+    config = load_config([])
+    projects = {p["id"]: p for p in config["projects"]}
+    groups = {g["id"]: g["label"] for g in config["groups"]}
+    out = io.StringIO()
+    w = csv.writer(out)
+    w.writerow(["date", "group", "task", "task_id", "start", "end", "hours", "source", "note", "edited"])
+    for s in sorted(list_sessions(), key=lambda x: x["start"]):
+        p = projects.get(s["project"])
+        start, end = parse_ts(s["start"]), parse_ts(s["end"])
+        w.writerow([
+            start.strftime("%Y-%m-%d"),
+            groups.get(p["group"], "Other") if p else "Other",
+            p["label"] if p else s["project"],
+            s["project"],
+            s["start"], s["end"],
+            f"{(end - start).total_seconds() / 3600:.2f}",
+            s["source"], s["note"], s["edited"],
+        ])
+    return out.getvalue()
+
+
+def clear_sessions(scope):
+    """Removes finished sessions that started today, this week, or ever.
+    The whole file is copied to a dated backup first."""
+    now = datetime.now()
+    today = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    cutoffs = {"today": today, "week": today - timedelta(days=today.weekday()), "all": None}
+    if scope not in cutoffs:
+        raise UserError("Unknown range to clear")
+    cutoff = cutoffs[scope]
+    lines = read_entry_lines()
+    if not lines:
+        return
+    backup = DATA_DIR / f"entries.jsonl.bak-{now.strftime('%Y%m%d-%H%M%S')}"
+    backup.write_bytes((DATA_DIR / "entries.jsonl").read_bytes())
+    kept, removed = [], []
+    for raw in lines:
+        parsed = parse_entry(raw)
+        # Unreadable lines are left alone rather than silently dropped.
+        if parsed is not None and (cutoff is None or parsed[1] >= cutoff):
+            removed.append(json.loads(raw))
+            continue
+        kept.append(raw)
+    if not removed:
+        return
+    write_entry_lines(kept)
+    audit("clear", scope=scope, backup=backup.name, removed=removed)
+
+
+def update_running(project, start):
+    running = load_running([])
+    if running is None:
+        raise UserError("Nothing is running", 409)
+    check_project(project, allowed_extra=running["project"])
+    start_dt = keep_seconds(parse_input_ts(start, "Start"), running["start"])
+    if start_dt > datetime.now():
+        raise UserError("Start can't be in the future")
+    after = {"project": project, "start": start_dt.strftime(FMT)}
+    if after == running:
+        return
+    write_running(project, after["start"])
+    audit("edit-running", before=running, after=after)
+
+
+def discard_running():
+    running = load_running([])
+    if running is None:
+        return
+    try:
+        (DATA_DIR / "running.json").unlink()
+    except FileNotFoundError:
+        pass
+    audit("discard-running", before=running)
+
+
 # ---------------------------------------------------------------- http
 
 class Handler(BaseHTTPRequestHandler):
@@ -392,6 +657,17 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json(500, {"error": f"missing {PAGE.name}"})
         elif self.path == "/api/state":
             self.send_json(200, build_state())
+        elif self.path == "/api/sessions":
+            self.send_json(200, {"sessions": list_sessions()})
+        elif self.path == "/export.csv":
+            body = export_csv().encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/csv; charset=utf-8")
+            self.send_header("Content-Disposition",
+                             f'attachment; filename="timecard-{datetime.now():%Y-%m-%d}.csv"')
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         else:
             self.send_json(404, {"error": "not found"})
 
@@ -406,27 +682,30 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length) or b"{}")
         except ValueError:
             body = {}
+        if not isinstance(body, dict):
+            body = {}
+        arg = lambda key: str(body.get(key) or "")
 
+        routes = {
+            "/api/start": lambda: start_task(arg("project")),
+            "/api/stop": lambda: stop_running(datetime.now().replace(microsecond=0)),
+            "/api/tasks": lambda: add_task_or_fail(arg("group"), arg("label")),
+            "/api/sessions/update": lambda: update_session(arg("id"), arg("project"), arg("start"), arg("end"), arg("note")),
+            "/api/sessions/delete": lambda: delete_session(arg("id")),
+            "/api/sessions/add": lambda: add_session(arg("project"), arg("start"), arg("end"), arg("note")),
+            "/api/sessions/clear": lambda: clear_sessions(arg("scope")),
+            "/api/running/update": lambda: update_running(arg("project"), arg("start")),
+            "/api/running/discard": discard_running,
+        }
+        action = routes.get(self.path)
+        if action is None:
+            self.send_json(404, {"error": "not found"})
+            return
         try:
-            if self.path == "/api/start":
-                project = body.get("project") if isinstance(body, dict) else None
-                known = {p["id"] for p in load_config([])["projects"]}
-                if project not in known:
-                    self.send_json(400, {"error": f"unknown project {project!r}"})
-                    return
-                start_project(project)
-            elif self.path == "/api/stop":
-                stop_running(datetime.now().replace(microsecond=0))
-            elif self.path == "/api/tasks":
-                if not isinstance(body, dict):
-                    body = {}
-                error = add_task(str(body.get("group", "")), str(body.get("label", "")))
-                if error:
-                    self.send_json(400, {"error": error})
-                    return
-            else:
-                self.send_json(404, {"error": "not found"})
-                return
+            action()
+        except UserError as exc:
+            self.send_json(exc.status, {"error": str(exc)})
+            return
         except OSError as exc:
             self.send_json(500, {"error": f"write failed: {exc}"})
             return

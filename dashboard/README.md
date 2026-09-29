@@ -55,6 +55,28 @@ full screen there.
 - The "behind pace" line spreads a group's goal over your workdays. Add
   `"pace": false` to a group in `config.json` to hide it (CU has this).
 
+## Sessions and your records
+
+**Sessions** (under the running timer) lists every logged session, newest
+first, grouped by day. From there you can:
+
+- **Edit** a session's task, start, end and note, or **Delete** it (asks first).
+  Tapping a block in the day strip opens that session for editing.
+- **+ Add session** to log time you forgot to track. It's labelled "added".
+- Fix the running timer's start time, or discard it without saving.
+- **Clear…** today, this week, or everything (asks twice).
+- **Export CSV** of every session: date, group, task, start, end, hours,
+  whether it was timed or added by hand, note, and when it was last edited.
+
+What's kept in `~/.timetrack`:
+
+- `entries.jsonl`: the sessions. Notes, "added" and "edited" are extra fields
+  on each line.
+- `audit.jsonl`: a change log. Every edit, delete, manual add, running-timer
+  fix and clear is appended here with the time and the before and after
+  values. The dashboard never edits or trims it.
+- `entries.jsonl.bak-<date>`: a full copy saved before each Clear.
+
 ## If something's wrong
 
 - Page says "Can't reach the timecard server": run `bash install.sh` again.
