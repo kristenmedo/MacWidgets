@@ -1,0 +1,942 @@
+"use strict";
+
+// ---------------------------------------------------------------- store
+//
+// setup/config    {groups:[{id,label,target,pace}], tasks:[{id,label,color,group}],
+//                  day_start, day_hours, workdays}
+// timer/running   {project, start}            present only while a timer runs
+// weeks/<monday>  {week, sessions:[{id, project, start, end, note?, source?, edited?}]}
+// changes/<monday> {week, entries:[{at, action, before?, after?, ...}]}
+//
+// Times are naive local "YYYY-MM-DDTHH:MM:SS", the same format tt used.
+
+let db = null;
+let downloads = null;
+let config = null;
+let configLoaded = false;
+let running = null;
+let weeks = {};            // monday key -> sessions array
+let weeksLoaded = false;
+let storeError = "";
+let writeChain = Promise.resolve();
+
+let adding = null;          // group id whose add-task box is open
+let addDraft = "";
+let view = "tasks";         // "tasks" or "sessions"
+let sessEdit = null;        // session id being edited, "new", or "running"
+let sessConfirm = null;     // session id (or "running") awaiting delete confirmation
+let clearMode = false;
+let clearArmed = null;
+let sessError = "";
+let actionError = "";
+
+const DEFAULTS = {day_start: "08:30", day_hours: 8, workdays: [0, 1, 2, 3, 4]};
+const PALETTES = [
+  ["#6FA8C7", "#5E9C8F", "#8C9BD6", "#4F86A8", "#7FB8B0", "#6C7FB8"],
+  ["#D6A15E", "#C98579", "#CDB26A", "#B7876B", "#D98E9E", "#C4A27F"],
+  ["#A58FC9", "#9DB07A", "#C98FB7", "#8FA3A8"],
+];
+
+// ---------------------------------------------------------------- time helpers
+
+function pad(n) { return String(n).padStart(2, "0"); }
+
+function fmt(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function parseTs(s) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(s || "");
+  if (!m) return null;
+  return new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0));
+}
+
+function mondayOf(d) {
+  const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  return new Date(day.getFullYear(), day.getMonth(), day.getDate() - ((day.getDay() + 6) % 7));
+}
+
+function weekKey(d) {
+  const m = mondayOf(d);
+  return `${m.getFullYear()}-${pad(m.getMonth() + 1)}-${pad(m.getDate())}`;
+}
+
+function dayKey(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function toInput(d) {
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function newId() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+}
+
+function hm(seconds) {
+  const mins = Math.max(0, Math.floor(seconds / 60));
+  const h = Math.floor(mins / 60), m = mins % 60;
+  if (h === 0) return `${m}m`;
+  return `${h}h ${pad(m)}m`;
+}
+
+function clock(d) {
+  let h = d.getHours();
+  const m = pad(d.getMinutes());
+  const ap = h < 12 ? "am" : "pm";
+  h = h % 12 || 12;
+  return `${h}:${m} ${ap}`;
+}
+
+// ---------------------------------------------------------------- derived state
+
+function allSessions() {
+  const out = [];
+  for (const [key, list] of Object.entries(weeks)) {
+    for (const s of list) if (parseTs(s.start) && parseTs(s.end)) out.push({...s, week: key});
+  }
+  out.sort((a, b) => (a.start < b.start ? 1 : a.start > b.start ? -1 : 0));
+  return out;
+}
+
+// Builds the same shape the Edge dashboard drew from, out of the stored docs.
+function buildState(now) {
+  const cfg = config || {};
+  const groups = (Array.isArray(cfg.groups) ? cfg.groups : [])
+    .filter(g => g && typeof g.id === "string")
+    .map(g => ({
+      id: g.id,
+      label: typeof g.label === "string" ? g.label : g.id,
+      weekly_target_hours: typeof g.target === "number" ? g.target : 0,
+      pace: g.pace !== false,
+    }));
+  const ids = new Set(groups.map(g => g.id));
+  const projects = (Array.isArray(cfg.tasks) ? cfg.tasks : [])
+    .filter(t => t && typeof t.id === "string")
+    .map(t => ({
+      id: t.id,
+      label: typeof t.label === "string" ? t.label : t.id,
+      color: typeof t.color === "string" ? t.color : null,
+      group: ids.has(t.group) ? t.group : "_other",
+    }));
+  const projectGroup = {};
+  for (const p of projects) projectGroup[p.id] = p.group;
+
+  const weekStart = mondayOf(now);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const tomorrow = new Date(today.getFullYear(), today.getMonth(), today.getDate() + 1);
+  const byGroup = {};
+  const blocks = [];
+  const sessions = allSessions();
+  for (const s of sessions) {
+    const a = parseTs(s.start), b = parseTs(s.end);
+    const secs = Math.max(0, (Math.min(b, now) - Math.max(a, weekStart)) / 1000);
+    if (secs > 0) {
+      const g = projectGroup[s.project] || "_other";
+      byGroup[g] = (byGroup[g] || 0) + secs;
+    }
+    if (b > today && a < tomorrow) {
+      blocks.push({id: s.id, project: s.project, start: new Date(Math.max(a, today)), end: new Date(Math.min(b, tomorrow))});
+    }
+  }
+  blocks.sort((x, y) => x.start - y.start);
+
+  const runGroup = running ? (projectGroup[running.project] || "_other") : null;
+  if (projects.some(p => p.group === "_other") || byGroup._other || runGroup === "_other") {
+    groups.push({id: "_other", label: "Other", weekly_target_hours: 0, pace: false});
+  }
+  for (const g of groups) g.closed_seconds = byGroup[g.id] || 0;
+
+  return {
+    config: {
+      groups, projects,
+      day_start: typeof cfg.day_start === "string" && /^\d{1,2}:\d{2}$/.test(cfg.day_start) ? cfg.day_start : DEFAULTS.day_start,
+      day_hours: typeof cfg.day_hours === "number" ? cfg.day_hours : DEFAULTS.day_hours,
+      workdays: Array.isArray(cfg.workdays) ? cfg.workdays.filter(d => Number.isInteger(d)) : DEFAULTS.workdays,
+    },
+    running,
+    weekStart,
+    blocks,
+    sessions,
+  };
+}
+
+let S = null;   // the state of the current render
+
+function projectMap() {
+  const map = {};
+  for (const p of S.config.projects) map[p.id] = p;
+  return map;
+}
+function groupOf(id) { const p = projectMap()[id]; return p ? p.group : "_other"; }
+function colorOf(id) { const p = projectMap()[id]; return (p && p.color) || "#7C8B9C"; }
+function labelOf(id) { const p = projectMap()[id]; return p ? p.label : id; }
+function groupLabel(id) {
+  const g = S.config.groups.find(g => g.id === groupOf(id));
+  return g ? g.label : "";
+}
+
+function runningInfo(now) {
+  const r = S.running;
+  if (!r) return null;
+  const start = parseTs(r.start);
+  if (!start) return null;
+  return {
+    id: r.project,
+    start,
+    elapsed: (now - start) / 1000,
+    weekPart: Math.max(0, (now - Math.max(start, S.weekStart)) / 1000),
+  };
+}
+
+function expectedByNow(target, now) {
+  const cfg = S.config;
+  const days = cfg.workdays;
+  if (!target || !days.length) return 0;
+  const [sh, sm] = cfg.day_start.split(":").map(Number);
+  const span = cfg.day_hours * 3600 * 1000;
+  let done = 0;
+  for (let i = 0; i < 7; i++) {
+    if (!days.includes(i)) continue;   // 0 = Monday
+    const ds = new Date(S.weekStart.getFullYear(), S.weekStart.getMonth(), S.weekStart.getDate() + i, sh, sm);
+    done += span > 0 ? Math.min(1, Math.max(0, (now - ds) / span)) : 0;
+  }
+  return target * 3600 * done / days.length;
+}
+
+// ---------------------------------------------------------------- rendering: tasks view
+
+function renderNow(now, run) {
+  const el = document.getElementById("now");
+  if (!el) return;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let today = 0;
+  for (const b of S.blocks) today += (b.end - b.start) / 1000;
+  if (run) today += Math.max(0, (now - Math.max(run.start, todayStart)) / 1000);
+
+  let html;
+  if (run) {
+    const mins = Math.floor(run.elapsed / 60);
+    const h = Math.floor(mins / 60), m = mins % 60;
+    const known = !!projectMap()[run.id];
+    html = `<div class="task">${esc(labelOf(run.id))}</div>
+      <div class="group">${esc(groupLabel(run.id))}${known ? "" : " · not in setup"}</div>
+      <div class="elapsed">${h}<span class="u">h</span>${pad(m)}<span class="u">m</span></div>
+      <div class="since">since ${clock(run.start)}</div>`;
+  } else {
+    html = `<div class="task">Not tracking</div>
+      <div class="group">Tap a task to start</div>`;
+  }
+  if (view === "tasks") html += `<button class="pill open-sessions" data-act="sessions">Sessions</button>`;
+  html += `<div class="today"><b>${hm(today)}</b> today of ${S.config.day_hours}h</div>`;
+  el.innerHTML = html;
+}
+
+function groupWeek(g, run) {
+  let total = g.closed_seconds;
+  if (run && groupOf(run.id) === g.id) total += run.weekPart;
+  return total;
+}
+
+function renderGroups(now, run) {
+  const top = document.getElementById("top");
+  const groups = S.config.groups;
+  top.style.gridTemplateColumns = `minmax(0, 11rem) repeat(${Math.max(1, groups.length)}, minmax(0, 1fr))`;
+
+  let html = `<section id="now"></section>`;
+  if (!groups.length) {
+    html += `<section class="grp"><div class="grp-name">${configLoaded ? "No groups set up yet" : "Loading your setup…"}</div>
+      <div class="grp-empty">${configLoaded ? "Ask Claude to add your groups and weekly goals." : ""}</div></section>`;
+  }
+  for (const g of groups) {
+    const week = groupWeek(g, run);
+    let pace = `<div class="grp-pace"></div>`;
+    if (g.pace && g.weekly_target_hours > 0) {
+      const diff = week - expectedByNow(g.weekly_target_hours, now);
+      if (Math.abs(diff) < 10 * 60) pace = `<div class="grp-pace">on pace</div>`;
+      else if (diff < 0) pace = `<div class="grp-pace behind">${hm(-diff)} behind pace</div>`;
+      else pace = `<div class="grp-pace">${hm(diff)} ahead of pace</div>`;
+    }
+    const target = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h</span>` : "";
+
+    let tasks = "";
+    for (const p of S.config.projects.filter(p => p.group === g.id)) {
+      const on = run && run.id === p.id;
+      const color = esc(p.color || "#7C8B9C");
+      tasks += `<button class="task-btn${on ? " on" : ""}" data-task="${esc(p.id)}"${on ? ` style="background:${color}"` : ""}>
+        <span class="sw" style="background:${color}"></span>
+        <span class="name">${esc(p.label)}</span>
+        ${on ? `<span class="t">stop</span>` : ""}
+      </button>`;
+    }
+    if (g.id !== "_other") {
+      if (adding === g.id) {
+        tasks += `<form class="add-form" data-group="${esc(g.id)}">
+          <input id="add-task-${esc(g.id)}" name="label" placeholder="Task name" maxlength="60" autocomplete="off" value="${esc(addDraft)}">
+          <button type="submit">Add</button>
+        </form>`;
+      } else {
+        tasks += `<button class="task-btn add-btn" data-add="${esc(g.id)}">+ Add task</button>`;
+      }
+    } else if (!tasks) {
+      tasks = `<div class="grp-empty">Time from tasks that aren't in a group</div>`;
+    }
+
+    html += `<section class="grp">
+      <div class="grp-head">
+        <div class="grp-name">${esc(g.label)}</div>
+        <div class="grp-week">${hm(week)}${target}</div>
+      </div>
+      ${pace}
+      <div class="tasks">${tasks}</div>
+    </section>`;
+  }
+  top.innerHTML = html;
+  renderNow(now, run);
+
+  const input = top.querySelector(".add-form input");
+  if (input) {
+    input.focus();
+    input.setSelectionRange(input.value.length, input.value.length);
+  }
+}
+
+function renderStrip(now, run) {
+  const cfg = S.config;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const [sh, sm] = cfg.day_start.split(":").map(Number);
+  const workStart = new Date(todayStart.getTime() + (sh * 60 + sm) * 60000);
+  const workEnd = new Date(workStart.getTime() + cfg.day_hours * 3600000);
+  const isWorkday = cfg.workdays.includes((now.getDay() + 6) % 7);
+
+  const blocks = S.blocks.map(b => ({id: b.project, sid: b.id, start: b.start, end: b.end}));
+  if (run) blocks.push({id: run.id, sid: "running", start: new Date(Math.max(run.start, todayStart)), end: now});
+
+  let lo = workStart, hi = workEnd;
+  for (const b of blocks) {
+    if (b.start < lo) lo = b.start;
+    if (b.end > hi) hi = b.end;
+  }
+  lo = new Date(todayStart.getTime() + Math.floor((lo - todayStart) / 3600000) * 3600000);
+  hi = new Date(todayStart.getTime() + Math.min(24, Math.ceil((hi - todayStart) / 3600000)) * 3600000);
+  const span = hi - lo;
+  const pct = t => ((t - lo) / span * 100).toFixed(3) + "%";
+  const w = (a, b) => ((b - a) / span * 100).toFixed(3) + "%";
+
+  const strip = document.getElementById("strip");
+  let html = "";
+  if (isWorkday) html += `<div class="work" style="left:${pct(workStart)};width:${w(workStart, workEnd)}"></div>`;
+  let axis = "";
+  for (let t = lo.getTime(); t <= hi.getTime(); t += 3600000) {
+    const d = new Date(t);
+    const h = d.getHours();
+    const first = t === lo.getTime();
+    const label = h === 0 ? "12 am" : h === 12 ? "noon" : `${h % 12 || 12}${first ? (h < 12 ? " am" : " pm") : ""}`;
+    if (t > lo.getTime() && t < hi.getTime()) html += `<div class="tick" style="left:${pct(d)}"></div>`;
+    if (t < hi.getTime()) axis += `<span class="${first ? "first" : ""}" style="left:${pct(d)}">${label}</span>`;
+  }
+  for (const b of blocks) {
+    const px = (b.end - b.start) / span * strip.clientWidth;
+    const text = px > 90 ? esc(labelOf(b.id)) : "";
+    html += `<div class="blk" data-sid="${esc(b.sid)}" title="${esc(labelOf(b.id))}, ${clock(b.start)} – ${clock(b.end)}" style="left:${pct(b.start)};width:${w(b.start, b.end)};background:${esc(colorOf(b.id))}">${text}</div>`;
+  }
+  if (now >= lo && now <= hi) html += `<div class="nowmark" style="left:${pct(now)}"></div>`;
+
+  strip.innerHTML = html;
+  document.getElementById("axis").innerHTML = axis;
+}
+
+// ---------------------------------------------------------------- rendering: sessions view
+
+function sessEditing() {
+  return !!(sessEdit || sessConfirm || clearMode);
+}
+
+function dayLabel(d, now) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const diff = Math.round((new Date(d.getFullYear(), d.getMonth(), d.getDate()) - today) / 86400000);
+  if (diff === 0) return "Today";
+  if (diff === -1) return "Yesterday";
+  const opts = {weekday: "long", month: "short", day: "numeric"};
+  if (d.getFullYear() !== now.getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString("en-US", opts);
+}
+
+function taskOptions(selected) {
+  let html = "";
+  if (selected && !projectMap()[selected]) html += `<option value="${esc(selected)}" selected>${esc(selected)} (not in setup)</option>`;
+  for (const g of S.config.groups) {
+    const items = S.config.projects.filter(p => p.group === g.id);
+    if (!items.length) continue;
+    html += `<optgroup label="${esc(g.label)}">`;
+    for (const p of items) html += `<option value="${esc(p.id)}"${p.id === selected ? " selected" : ""}>${esc(p.label)}</option>`;
+    html += `</optgroup>`;
+  }
+  return html;
+}
+
+function editorHtml(kind, s) {
+  const hasEnd = kind !== "running";
+  const k = esc(kind);
+  return `<form class="editor" data-kind="${k}">
+    <select id="ed-project-${k}" name="project" aria-label="Task">${taskOptions(s.project)}</select>
+    <input id="ed-start-${k}" type="datetime-local" name="start" step="60" value="${esc(s.start)}" aria-label="Start">
+    ${hasEnd ? `<span class="lbl">to</span><input id="ed-end-${k}" type="datetime-local" name="end" step="60" value="${esc(s.end)}" aria-label="End">` : `<span class="lbl">still running</span>`}
+    ${hasEnd ? `<input id="ed-note-${k}" name="note" maxlength="500" placeholder="Note: what was this for?" value="${esc(s.note || "")}">` : ""}
+    <button type="submit" class="pill strong">Save</button>
+    <button type="button" class="pill" data-act="cancel">Cancel</button>
+  </form>`;
+}
+
+function rowHtml(s) {
+  const start = parseTs(s.start), end = parseTs(s.end);
+  if (sessEdit === s.id) {
+    return editorHtml(s.id, {project: s.project, start: toInput(start), end: toInput(end), note: s.note});
+  }
+  const crosses = dayKey(start) !== dayKey(end);
+  const tags = (s.source === "manual" ? `<span class="tag">added</span>` : "") + (s.edited ? `<span class="tag">edited</span>` : "");
+  const btns = sessConfirm === s.id
+    ? `<span class="q">Delete?</span><button class="pill danger" data-act="del-yes" data-sid="${esc(s.id)}">Delete</button><button class="pill" data-act="cancel">Cancel</button>`
+    : `<button class="pill" data-act="edit" data-sid="${esc(s.id)}">Edit</button><button class="pill" data-act="del" data-sid="${esc(s.id)}">Delete</button>`;
+  return `<div class="row">
+    <span class="sw" style="background:${esc(colorOf(s.project))}"></span>
+    <span class="r-task">${esc(labelOf(s.project))}<span class="r-grp">${esc(groupLabel(s.project))}</span>${tags}</span>
+    <span class="r-note">${esc(s.note || "")}</span>
+    <span class="r-time">${clock(start)} – ${clock(end)}${crosses ? " +1d" : ""}</span>
+    <span class="r-dur">${hm((end - start) / 1000)}</span>
+    <span class="r-btns">${btns}</span>
+  </div>`;
+}
+
+function runningRowHtml(run) {
+  if (sessEdit === "running") return editorHtml("running", {project: run.id, start: toInput(run.start)});
+  const btns = sessConfirm === "running"
+    ? `<span class="q">Discard without saving?</span><button class="pill danger" data-act="discard-yes">Discard</button><button class="pill" data-act="cancel">Cancel</button>`
+    : `<button class="pill" data-act="edit" data-sid="running">Edit</button><button class="pill" data-act="del" data-sid="running">Discard</button>`;
+  return `<div class="row">
+    <span class="sw" style="background:${esc(colorOf(run.id))}"></span>
+    <span class="r-task">${esc(labelOf(run.id))}<span class="r-grp">${esc(groupLabel(run.id))}</span><span class="tag">running</span></span>
+    <span class="r-note"></span>
+    <span class="r-time">since ${clock(run.start)}</span>
+    <span class="r-dur">${hm(run.elapsed)}</span>
+    <span class="r-btns">${btns}</span>
+  </div>`;
+}
+
+function clearHtml() {
+  const opt = (scope, text) => clearArmed === scope
+    ? `<button class="pill danger" data-act="clear-yes" data-scope="${scope}">Tap again to clear ${text}</button>`
+    : `<button class="pill" data-act="clear-arm" data-scope="${scope}">Clear ${text}</button>`;
+  return `<div class="clear-panel">
+    <p>Removes finished sessions. A running timer isn't touched. Every removed session
+    is copied into the change log first, so the record of what was cleared stays.</p>
+    <div class="opts">${opt("today", "today")}${opt("week", "this week")}${opt("all", "everything")}
+      <button class="pill" data-act="cancel">Cancel</button></div>
+  </div>`;
+}
+
+function renderSessions(now, run) {
+  const top = document.getElementById("top");
+  top.style.gridTemplateColumns = "minmax(0, 11rem) minmax(0, 1fr)";
+
+  let body = "";
+  if (clearMode) {
+    body = clearHtml();
+  } else {
+    if (sessEdit === "new") {
+      const end = new Date(Math.floor(now / 300000) * 300000);
+      const start = new Date(end - 3600000);
+      const first = S.config.projects[0];
+      body += editorHtml("new", {project: first ? first.id : "", start: toInput(start), end: toInput(end), note: ""});
+    }
+    if (run) body += runningRowHtml(run);
+    const list = S.sessions;
+    let day = null;
+    for (let i = 0; i < list.length; i++) {
+      const s = list[i];
+      const key = dayKey(parseTs(s.start));
+      if (key !== day) {
+        day = key;
+        let total = 0;
+        for (let j = i; j < list.length && dayKey(parseTs(list[j].start)) === key; j++) {
+          total += (parseTs(list[j].end) - parseTs(list[j].start)) / 1000;
+        }
+        body += `<div class="day-h"><span>${esc(dayLabel(parseTs(s.start), now))}</span><span>${hm(total)}</span></div>`;
+      }
+      body += rowHtml(s);
+    }
+    if (!list.length && !run && sessEdit !== "new") {
+      body += `<div class="empty">${weeksLoaded ? "No sessions yet. Start a task, or use + Add session for time you didn't track." : "Loading sessions…"}</div>`;
+    }
+  }
+
+  top.innerHTML = `<section id="now"></section>
+    <section class="sess">
+      <div class="sess-head">
+        <div class="grp-name">Sessions</div>
+        <button class="pill" data-act="add">+ Add session</button>
+        ${downloads ? `<button class="pill" data-act="export">Export CSV</button>` : ""}
+        <button class="pill" data-act="clear">Clear…</button>
+        <button class="pill strong" data-act="done">Done</button>
+      </div>
+      <div class="sess-err">${esc(sessError)}</div>
+      <div class="sess-list">${body}</div>
+    </section>`;
+  renderNow(now, run);
+
+  const editor = top.querySelector(".editor");
+  if (editor) editor.scrollIntoView({block: "nearest"});
+}
+
+function render() {
+  const now = new Date();
+  S = buildState(now);
+  const run = runningInfo(now);
+  if (view === "sessions") {
+    if (sessEditing()) renderNow(now, run);   // don't wipe a form mid-edit
+    else renderSessions(now, run);
+  } else if (adding) {
+    renderNow(now, run);
+  } else {
+    renderGroups(now, run);
+  }
+  renderStrip(now, run);
+  document.getElementById("warn").textContent = [storeError, view === "tasks" ? actionError : ""].filter(Boolean).join(" · ");
+}
+
+// Redraws the sessions view even while a form is open; use it when the user
+// changes what's open. Background updates go through render(), which leaves forms alone.
+function redrawSessions() {
+  const now = new Date();
+  S = buildState(now);
+  renderSessions(now, runningInfo(now));
+  renderStrip(now, runningInfo(now));
+}
+
+function showSessError(msg) {
+  sessError = msg;
+  const el = document.querySelector(".sess-err");
+  if (el) el.textContent = msg;
+}
+
+// ---------------------------------------------------------------- writes
+
+class UserError extends Error {}
+
+function describe(e) {
+  if (e instanceof UserError) return e.message;
+  if (e && e.code === "quota_exceeded") return "Storage is full. Ask Claude to archive older weeks.";
+  if (e && (e.code === "revoked" || e.code === "not_granted")) return "This page can't save right now. Reload it.";
+  if (e && e.code === "invalid_argument") return "Only the owner of this page can change it.";
+  return "Couldn't save. Check your connection and try again.";
+}
+
+// One write at a time, in order.
+function enqueue(fn) {
+  const p = writeChain.then(fn);
+  writeChain = p.catch(() => {});
+  return p;
+}
+
+async function act(fn) {
+  if (!db) {
+    const msg = "Open this page on claude.ai while signed in to save.";
+    if (view === "sessions") showSessError(msg); else { actionError = msg; render(); }
+    return false;
+  }
+  try {
+    await enqueue(fn);
+    actionError = "";
+    sessError = "";
+    return true;
+  } catch (e) {
+    const msg = describe(e);
+    if (view === "sessions") showSessError(msg); else { actionError = msg; render(); }
+    return false;
+  }
+}
+
+async function mutateWeek(key, fn) {
+  const ref = db.doc("weeks/" + key);
+  const snap = await ref.get();
+  const list = snap.exists ? (snap.data().sessions || []).map(s => ({...s})) : [];
+  const next = fn(list);
+  if (next === null) return;
+  if (next.length) await ref.set({week: key, sessions: next});
+  else await ref.delete();
+}
+
+async function logChange(record) {
+  const now = new Date();
+  const key = weekKey(now);
+  const ref = db.doc("changes/" + key);
+  const snap = await ref.get();
+  const entries = snap.exists ? [...(snap.data().entries || [])] : [];
+  entries.push({at: fmt(now), ...record});
+  await ref.set({week: key, entries});
+}
+
+async function closeTimer(r, now) {
+  const s = {id: newId(), project: r.project, start: r.start, end: fmt(now)};
+  const start = parseTs(r.start);
+  if (start && now > start) await mutateWeek(weekKey(start), list => [...list, s]);
+  await db.doc("timer/running").delete();
+}
+
+function startTask(project) {
+  return act(async () => {
+    const now = new Date();
+    const snap = await db.doc("timer/running").get();
+    if (snap.exists && snap.data().project === project) return;
+    if (snap.exists) await closeTimer(snap.data(), now);
+    await db.doc("timer/running").set({project, start: fmt(now)});
+  });
+}
+
+function stopTimer() {
+  return act(async () => {
+    const snap = await db.doc("timer/running").get();
+    if (snap.exists) await closeTimer(snap.data(), new Date());
+  });
+}
+
+function slugify(label) {
+  return label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "task";
+}
+
+function addTask(groupId, label) {
+  return act(async () => {
+    label = label.split(/\s+/).filter(Boolean).join(" ");
+    if (!label) throw new UserError("Task name is empty");
+    const ref = db.doc("setup/config");
+    const snap = await ref.get();
+    if (!snap.exists) throw new UserError("Setup is missing. Ask Claude to set up your groups.");
+    const cfg = JSON.parse(JSON.stringify(snap.data()));
+    const groups = cfg.groups || [];
+    const index = groups.findIndex(g => g.id === groupId);
+    if (index < 0) throw new UserError("That group no longer exists");
+    const tasks = cfg.tasks || (cfg.tasks = []);
+    const taken = new Set(tasks.map(t => t.id));
+    const base = slugify(label);
+    let id = base, n = 2;
+    while (taken.has(id)) id = `${base}-${n++}`;
+    const palette = PALETTES[Math.min(index, PALETTES.length - 1)];
+    const used = new Set(tasks.map(t => String(t.color || "").toUpperCase()));
+    const siblings = tasks.filter(t => t.group === groupId).length;
+    const color = palette.find(c => !used.has(c.toUpperCase())) || palette[siblings % palette.length];
+    tasks.push({id, label, color, group: groupId});
+    await ref.set(cfg);
+  });
+}
+
+function keepSeconds(value, original) {
+  // Time fields only go to the minute; an unchanged minute keeps the stored seconds.
+  const d = parseTs(value);
+  const o = parseTs(original);
+  if (d && o && Math.floor(d / 60000) === Math.floor(o / 60000)) return original;
+  return d ? fmt(d) : null;
+}
+
+function checkTimes(start, end, now) {
+  if (!start) throw new UserError("Start time is missing or invalid");
+  if (!end) throw new UserError("End time is missing or invalid");
+  if (parseTs(end) <= parseTs(start)) throw new UserError("End must be after start");
+  if (parseTs(end) > new Date(now.getTime() + 60000)) throw new UserError("End can't be in the future");
+}
+
+function checkProject(project, allowed) {
+  if (!projectMap()[project] && project !== allowed) throw new UserError("Pick a task");
+}
+
+function cleanNote(note) {
+  note = String(note || "").split(/\s+/).filter(Boolean).join(" ");
+  if (note.length > 500) throw new UserError("Note is too long (500 characters max)");
+  return note;
+}
+
+function addSession(f) {
+  return act(async () => {
+    const now = new Date();
+    checkProject(f.project);
+    const start = keepSeconds(f.start, null), end = keepSeconds(f.end, null);
+    checkTimes(start, end, now);
+    const s = {id: newId(), project: f.project, start, end, source: "manual"};
+    const note = cleanNote(f.note);
+    if (note) s.note = note;
+    await mutateWeek(weekKey(parseTs(start)), list => [...list, s]);
+    await logChange({action: "add", after: s});
+  });
+}
+
+function findSession(id) {
+  return S.sessions.find(s => s.id === id) || null;
+}
+
+function updateSession(id, f) {
+  return act(async () => {
+    const now = new Date();
+    const known = findSession(id);
+    if (!known) throw new UserError("That session no longer exists");
+    const oldKey = known.week;
+    let before = null, after = null;
+    await mutateWeek(oldKey, list => {
+      const i = list.findIndex(s => s.id === id);
+      if (i < 0) throw new UserError("That session was changed elsewhere. Close this and try again.");
+      before = list[i];
+      checkProject(f.project, before.project);
+      const start = keepSeconds(f.start, before.start), end = keepSeconds(f.end, before.end);
+      checkTimes(start, end, now);
+      after = {...before, project: f.project, start, end};
+      const note = cleanNote(f.note);
+      if (note) after.note = note; else delete after.note;
+      delete after.edited;
+      const same = after.project === before.project && after.start === before.start
+        && after.end === before.end && (after.note || "") === (before.note || "");
+      if (same) { after = null; return null; }
+      after.edited = fmt(now);
+      if (weekKey(parseTs(start)) === oldKey) { list[i] = after; return list; }
+      list.splice(i, 1);
+      return list;
+    });
+    if (!after) return;
+    const newKey = weekKey(parseTs(after.start));
+    if (newKey !== oldKey) await mutateWeek(newKey, list => [...list, after]);
+    await logChange({action: "edit", before, after});
+  });
+}
+
+function deleteSession(id) {
+  return act(async () => {
+    const known = findSession(id);
+    if (!known) return;
+    let removed = null;
+    await mutateWeek(known.week, list => {
+      const i = list.findIndex(s => s.id === id);
+      if (i < 0) return null;
+      removed = list[i];
+      list.splice(i, 1);
+      return list;
+    });
+    if (removed) await logChange({action: "delete", before: removed});
+  });
+}
+
+function clearSessions(scope) {
+  return act(async () => {
+    const now = new Date();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const cutoff = scope === "today" ? today : scope === "week" ? mondayOf(now) : null;
+    const removed = [];
+    for (const key of Object.keys(weeks)) {
+      await mutateWeek(key, list => {
+        const kept = list.filter(s => {
+          const gone = cutoff === null || parseTs(s.start) >= cutoff;
+          if (gone) removed.push(s);
+          return !gone;
+        });
+        return kept.length === list.length ? null : kept;
+      });
+    }
+    if (!removed.length) return;
+    // Removed sessions go into their own change-log documents, 400 at a time.
+    const stamp = fmt(now).replace(/[:]/g, "");
+    const parts = [];
+    for (let i = 0; i < removed.length; i += 400) {
+      const id = `${weekKey(now)}-clear-${stamp}-${i / 400}`;
+      await db.doc("changes/" + id).set({week: weekKey(now), cleared: removed.slice(i, i + 400)});
+      parts.push(id);
+    }
+    await logChange({action: "clear", scope, count: removed.length, removed_in: parts});
+  });
+}
+
+function updateRunning(f) {
+  return act(async () => {
+    const snap = await db.doc("timer/running").get();
+    if (!snap.exists) throw new UserError("Nothing is running");
+    const before = snap.data();
+    checkProject(f.project, before.project);
+    const start = keepSeconds(f.start, before.start);
+    if (!start) throw new UserError("Start time is missing or invalid");
+    if (parseTs(start) > new Date()) throw new UserError("Start can't be in the future");
+    const after = {project: f.project, start};
+    if (after.project === before.project && after.start === before.start) return;
+    await db.doc("timer/running").set(after);
+    await logChange({action: "edit-running", before, after});
+  });
+}
+
+function discardRunning() {
+  return act(async () => {
+    const snap = await db.doc("timer/running").get();
+    if (!snap.exists) return;
+    await db.doc("timer/running").delete();
+    await logChange({action: "discard-running", before: snap.data()});
+  });
+}
+
+function csvCell(v) {
+  const s = String(v == null ? "" : v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+async function exportCsv() {
+  const rows = [["date", "group", "task", "task_id", "start", "end", "hours", "source", "note", "edited"]];
+  for (const s of [...S.sessions].reverse()) {
+    const a = parseTs(s.start), b = parseTs(s.end);
+    rows.push([dayKey(a), groupLabel(s.project) || "Other", labelOf(s.project), s.project, s.start, s.end,
+      ((b - a) / 3600000).toFixed(2), s.source || "timer", s.note || "", s.edited || ""]);
+  }
+  const data = rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n";
+  try {
+    await downloads.save({filename: `timecard-${dayKey(new Date())}.csv`, data});
+  } catch (e) {
+    if (e && e.code !== "declined") showSessError("Export didn't start. Try again.");
+  }
+}
+
+// ---------------------------------------------------------------- events
+
+function openSessions(editId) {
+  view = "sessions";
+  adding = null;
+  sessEdit = editId || null;
+  sessConfirm = null;
+  clearMode = false;
+  clearArmed = null;
+  sessError = "";
+  redrawSessions();
+}
+
+function closeEditors() {
+  sessEdit = sessConfirm = clearArmed = null;
+  clearMode = false;
+  sessError = "";
+}
+
+document.addEventListener("click", e => {
+  const blk = e.target.closest(".blk[data-sid]");
+  if (blk) { openSessions(blk.dataset.sid); return; }
+
+  const btn = e.target.closest("[data-act]");
+  if (btn) {
+    const a = btn.dataset.act, sid = btn.dataset.sid;
+    if (a === "sessions") { openSessions(); return; }
+    if (view === "sessions") {
+      sessError = "";
+      const after = () => { closeEditors(); redrawSessions(); };
+      if (a === "done") { view = "tasks"; closeEditors(); render(); }
+      else if (a === "add") { closeEditors(); sessEdit = "new"; redrawSessions(); }
+      else if (a === "edit") { closeEditors(); sessEdit = sid; redrawSessions(); }
+      else if (a === "del") { closeEditors(); sessConfirm = sid; redrawSessions(); }
+      else if (a === "cancel") { closeEditors(); redrawSessions(); }
+      else if (a === "del-yes") deleteSession(sid).then(ok => ok && after());
+      else if (a === "discard-yes") discardRunning().then(ok => ok && after());
+      else if (a === "clear") { closeEditors(); clearMode = true; redrawSessions(); }
+      else if (a === "clear-arm") { clearArmed = btn.dataset.scope; redrawSessions(); }
+      else if (a === "clear-yes") clearSessions(btn.dataset.scope).then(ok => ok && after());
+      else if (a === "export") exportCsv();
+      return;
+    }
+  }
+
+  const task = e.target.closest("[data-task]");
+  if (task) {
+    const id = task.dataset.task;
+    if (running && running.project === id) stopTimer(); else startTask(id);
+    return;
+  }
+  const add = e.target.closest("[data-add]");
+  if (add) {
+    adding = add.dataset.add;
+    addDraft = "";
+    const now = new Date();
+    renderGroups(now, runningInfo(now));
+    return;
+  }
+  if (adding && !e.target.closest(".add-form")) {
+    adding = null;
+    render();
+  }
+});
+
+document.addEventListener("input", e => {
+  if (e.target.closest(".add-form")) addDraft = e.target.value;
+});
+
+document.addEventListener("keydown", e => {
+  if (e.key !== "Escape") return;
+  if (view === "sessions" && sessEditing()) { closeEditors(); redrawSessions(); }
+  else if (adding) { adding = null; render(); }
+});
+
+document.addEventListener("submit", async e => {
+  e.preventDefault();
+  const editor = e.target.closest(".editor");
+  if (editor) {
+    const kind = editor.dataset.kind;
+    const v = name => (editor.querySelector(`[name=${name}]`) || {}).value || "";
+    const f = {project: v("project"), start: v("start"), end: v("end"), note: v("note")};
+    const ok = kind === "new" ? await addSession(f)
+      : kind === "running" ? await updateRunning(f)
+      : await updateSession(kind, f);
+    if (ok) { closeEditors(); redrawSessions(); }
+    return;
+  }
+  const form = e.target.closest(".add-form");
+  if (!form) return;
+  const label = form.querySelector("input").value.trim();
+  if (!label) return;
+  const group = form.dataset.group;
+  adding = null;
+  render();
+  if (!(await addTask(group, label))) {
+    adding = group;
+    addDraft = label;
+    const now = new Date();
+    renderGroups(now, runningInfo(now));
+  }
+});
+
+window.addEventListener("resize", render);
+
+// ---------------------------------------------------------------- start
+
+render();
+setInterval(render, 20000);   // keeps the minutes and the now marker current
+
+(async () => {
+  const cl = window.claude;
+  db = cl && cl.use ? await cl.use("db") : null;
+  downloads = cl && cl.use ? await cl.use("downloads") : null;
+  if (!db) {
+    storeError = "Your records load when this page is opened on claude.ai while signed in.";
+    configLoaded = weeksLoaded = true;
+    render();
+    return;
+  }
+  const fail = err => {
+    storeError = err && err.code === "revoked" ? "Access to your records ended. Reload the page." : "Lost the connection to your records. Reload the page.";
+    render();
+  };
+  db.doc("setup/config").onSnapshot(snap => {
+    config = snap.exists ? snap.data() : null;
+    configLoaded = true;
+    render();
+  }, fail);
+  db.doc("timer/running").onSnapshot(snap => {
+    running = snap.exists ? snap.data() : null;
+    render();
+  }, fail);
+  db.collection("weeks").onSnapshot(q => {
+    const next = {};
+    for (const d of q.docs) next[d.id] = (d.data() || {}).sessions || [];
+    weeks = next;
+    weeksLoaded = true;
+    render();
+  }, fail);
+})();
