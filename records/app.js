@@ -1055,7 +1055,8 @@ function updateSession(id, f) {
       const parts = (f.stretches || []).map(([a, b, orig], n) => {
         const o = old[Number.isInteger(orig) ? orig : n];
         const sa = keepSeconds(a, o && o[0]), sb = keepSeconds(b, o && o[1]);
-        checkTimes(sa, sb, now);
+        // Untouched stretches are kept as they are, even very short placeholders.
+        if (!(o && sa === o[0] && sb === o[1])) checkTimes(sa, sb, now);
         return [sa, sb];
       });
       if (!parts.length) throw new UserError("Start time is missing or invalid");
