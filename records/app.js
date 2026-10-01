@@ -285,7 +285,7 @@ function renderNow(now, run) {
     const last = S.sessions[0];
     const lastTask = last && projectMap()[last.project];
     if (last && lastTask && !lastTask.completed && dayKey(parseTs(last.end)) === dayKey(now)) {
-      html += `<div class="ctrl-btns"><button class="ctrl cont" data-act="continue" data-sid="${esc(last.id)}" style="--c:${esc(colorOf(last.project))}">↻ Continue ${esc(lastTask.label)}</button></div>`;
+      html += `<div class="ctrl-btns"><button class="ctrl cont" data-act="continue" data-sid="${esc(last.id)}" style="--c:${esc(colorOf(last.project))}">▶ Resume ${esc(lastTask.label)}</button></div>`;
     }
   }
   if (view === "tasks") html += `<div class="now-btns"><button class="pill" data-act="sessions">Sessions</button><button class="pill" data-act="tasklist">Tasks</button></div>`;
@@ -491,7 +491,7 @@ function rowHtml(s) {
     + (live ? `<span class="tag">${S.running.paused ? "paused" : "running"}</span>` : "");
   const btns = sessConfirm === s.id
     ? `<span class="q">Delete?</span><button class="pill danger" data-act="del-yes" data-sid="${esc(s.id)}">Delete</button><button class="pill" data-act="cancel">Cancel</button>`
-    : `${live ? "" : `<button class="pill" data-act="continue" data-sid="${esc(s.id)}" title="Restart the timer on this session">Continue</button>`}<button class="pill" data-act="edit" data-sid="${esc(s.id)}">Edit</button><button class="pill" data-act="move" data-sid="${esc(s.id)}">Move</button><button class="pill" data-act="del" data-sid="${esc(s.id)}">Delete</button>`;
+    : `${live && !S.running.paused ? "" : `<button class="pill resume" data-act="continue" data-sid="${esc(s.id)}" style="--c:${esc(colorOf(s.project))}" title="Restart the timer on this session; new time is added to it">▶ Resume</button>`}<button class="pill" data-act="edit" data-sid="${esc(s.id)}">Edit</button><button class="pill" data-act="move" data-sid="${esc(s.id)}">Move</button><button class="pill" data-act="del" data-sid="${esc(s.id)}">Delete</button>`;
   return `<div class="row">
     <span class="sw" style="background:${esc(colorOf(s.project))}"></span>
     <span class="r-task">${esc(labelOf(s.project))}<span class="r-grp">${esc(groupLabel(s.project))}</span>${tags}</span>
@@ -1325,7 +1325,7 @@ document.addEventListener("click", e => {
       continueSession(sid).then(ok => {
         if (!ok) return;
         if (view === "sessions") redrawSessions();
-        toast(`Continuing ${labelOf((findSession(sid) || {}).project)}`, colorOf((findSession(sid) || {}).project));
+        toast(`Resumed ${labelOf((findSession(sid) || {}).project)}`, colorOf((findSession(sid) || {}).project));
       });
       return;
     }
