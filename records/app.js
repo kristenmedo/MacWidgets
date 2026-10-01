@@ -461,11 +461,12 @@ function editorHtml(kind, s) {
   const k = esc(kind);
   const pairs = s.stretches || [[s.start, s.end]];
   const times = hasEnd
-    ? `<div class="stretch-list">${pairs.map(([a, b], i) => `<span class="stretch">
+    ? `<div class="stretch-list">${pairs.map(([a, b], i) => `<span class="stretch" data-orig="${i}">
         ${pairs.length > 1 ? `<span class="lbl">${i + 1}.</span>` : ""}
         <input id="ed-start-${k}-${i}" type="datetime-local" name="start-${i}" step="60" value="${esc(a)}" aria-label="Start ${i + 1}">
         <span class="lbl">to</span>
         <input id="ed-end-${k}-${i}" type="datetime-local" name="end-${i}" step="60" value="${esc(b)}" aria-label="End ${i + 1}">
+        ${pairs.length > 1 ? `<button type="button" class="x-stretch" data-act="drop-stretch" aria-label="Remove stretch ${i + 1}" title="Remove this stretch">✕</button>` : ""}
       </span>`).join("")}</div>`
     : `<input id="ed-start-${k}" type="datetime-local" name="start-0" step="60" value="${esc(s.start)}" aria-label="Start"><span class="lbl">still running</span>`;
   return `<form class="editor" data-kind="${k}">
@@ -727,10 +728,10 @@ function redrawSessions() {
   renderStrip(now, runningInfo(now));
 }
 
-function showSessError(msg) {
+function showSessError(msg, info) {
   sessError = msg;
   const el = document.querySelector(".sess-err");
-  if (el) el.textContent = msg;
+  if (el) { el.textContent = msg; el.classList.toggle("info", !!info); }
 }
 
 // ---------------------------------------------------------------- writes
@@ -1051,8 +1052,9 @@ function updateSession(id, f) {
       before = list[i];
       checkProject(f.project, before.project);
       const old = stretchesOf(before);
-      const parts = (f.stretches || []).map(([a, b], n) => {
-        const sa = keepSeconds(a, old[n] && old[n][0]), sb = keepSeconds(b, old[n] && old[n][1]);
+      const parts = (f.stretches || []).map(([a, b, orig], n) => {
+        const o = old[Number.isInteger(orig) ? orig : n];
+        const sa = keepSeconds(a, o && o[0]), sb = keepSeconds(b, o && o[1]);
         checkTimes(sa, sb, now);
         return [sa, sb];
       });
@@ -1308,6 +1310,15 @@ document.addEventListener("click", e => {
     const a = btn.dataset.act, sid = btn.dataset.sid;
     if (a === "pause") { pauseTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
     if (a === "resume") { resumeTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
+    if (a === "drop-stretch") {
+      const list = btn.closest(".stretch-list");
+      btn.closest(".stretch").remove();
+      const left = list.querySelectorAll(".stretch");
+      left.forEach((el, i) => { const n = el.querySelector(".lbl"); if (n) n.textContent = `${i + 1}.`; });
+      if (left.length === 1) left.forEach(el => { el.querySelector(".x-stretch")?.remove(); el.querySelector(".lbl")?.remove(); });
+      showSessError("Stretch removed. Press Save to keep the change, or Cancel to undo.", true);
+      return;
+    }
     if (a === "continue") {
       const sid = btn.dataset.sid;
       continueSession(sid).then(ok => {
@@ -1411,8 +1422,8 @@ document.addEventListener("submit", async e => {
   if (editor) {
     const kind = editor.dataset.kind;
     const v = name => (editor.querySelector(`[name=${name}]`) || {}).value || "";
-    const stretches = [];
-    for (let i = 0; editor.querySelector(`[name=start-${i}]`); i++) stretches.push([v(`start-${i}`), v(`end-${i}`)]);
+    const stretches = [...editor.querySelectorAll(".stretch")].map(el => [
+      el.querySelector("[name^=start-]").value, el.querySelector("[name^=end-]").value, Number(el.dataset.orig)]);
     const f = {project: v("project"), start: v("start-0"), end: v("end-0"), note: v("note"), stretches};
     const ok = kind === "new" ? await addSession(f)
       : kind === "running" ? await updateRunning(f)
