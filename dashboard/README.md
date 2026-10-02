@@ -77,6 +77,17 @@ What's kept in `~/.timetrack`:
   values. The dashboard never edits or trims it.
 - `entries.jsonl.bak-<date>`: a full copy saved before each Clear.
 
+## Tests
+
+`test_timecard_server.py` covers the server's data-mutating paths (add/edit/
+delete/clear sessions, start/stop/edit the running timer, add tasks) against
+a throwaway temp directory, never your real `~/.timetrack`. Run it after
+touching `timecard_server.py`:
+
+```
+python3 -m unittest dashboard/test_timecard_server.py -v
+```
+
 ## If something's wrong
 
 - Page says "Can't reach the timecard server": run `bash install.sh` again.
