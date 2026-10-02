@@ -15,6 +15,7 @@ records from a conversation. Using the page doesn't use any Claude usage.
 - **Stop at an earlier time…** ends a timer you forgot, at the time you pick.
   The timer panel warns you when one has been running since an earlier day, for
   three hours, or an hour past the end of your working day.
+- Under the timer: today's time per task, and a bar filling towards your working day.
 - **Sessions:** every session by day. Resume, Edit (each stretch, with ✕ to
   remove one), Move to another task, or Delete, with Undo for a few seconds.
   **+ Add session** for time you didn't track. **Export…** for a CSV of any date

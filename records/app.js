@@ -30,6 +30,7 @@ let clearArmed = null;
 let sessError = "";
 let sessMove = null;        // session id (or "running") whose Move picker is open
 let linksMode = false;      // Stream Deck links panel
+let dueOpen = null;         // task id whose empty due-date box is open (Tasks view)
 let completing = null;      // task id whose "Complete" date box is open (Tasks view)
 let runningLoaded = false;
 let toastTimer = null;
@@ -294,6 +295,15 @@ function backupDue(now) {
   return days >= 7 ? `Backup ${days} days old · Back up` : "";
 }
 
+const NOW_COL = "16rem";   // width of the timer column on the left
+
+// "of 40h goal · 37h 00m to go", or "goal met" once it's reached.
+function goalHtml(secs, hours) {
+  if (!(hours > 0)) return "";
+  const left = hours * 3600 - secs;
+  return ` <span class="of">of ${hours}h goal ·</span> ${left > 0 ? `<span class="of">${hm(left)} to go</span>` : `<span class="tag ok">goal met</span>`}`;
+}
+
 function renderNow(now, run) {
   const el = document.getElementById("now");
   if (!el) return;
@@ -301,6 +311,10 @@ function renderNow(now, run) {
   let today = 0;
   for (const b of S.blocks) today += (b.end - b.start) / 1000;
   if (run && !run.paused) today += Math.max(0, (now - Math.max(run.start, todayStart)) / 1000);
+  const byTask = {};
+  for (const b of S.blocks) byTask[b.project] = (byTask[b.project] || 0) + (b.end - b.start) / 1000;
+  if (run && !run.paused) byTask[run.id] = (byTask[run.id] || 0) + Math.max(0, (now - Math.max(run.start, todayStart)) / 1000);
+  const worked = Object.entries(byTask).filter(([, secs]) => secs >= 60).sort((a, b) => b[1] - a[1]);
 
   let html;
   if (run) {
@@ -335,7 +349,12 @@ function renderNow(now, run) {
   if (view === "tasks") html += `<div class="now-btns">
       <button class="pill" data-act="sessions">Sessions</button><button class="pill" data-act="tasklist">Tasks</button>
       <button class="pill" data-act="weeks">Weeks</button><button class="pill" data-act="history">History</button></div>`;
-  html += `<div class="today"><b>${hm(today)}</b> today of ${S.config.day_hours}h</div>`;
+  html += `<div class="today-list">${worked.map(([id, secs]) => `<div class="today-row">
+      <span class="sw" style="background:${esc(colorOf(id))}"></span><span class="nm">${esc(labelOf(id))}</span><span class="t">${hm(secs)}</span></div>`).join("")}</div>`;
+  const dayLen = Math.max(1, S.config.day_hours * 3600, today);
+  html += `<div class="today"><b>${hm(today)}</b> today of ${S.config.day_hours}h</div>
+    <div class="today-bar" aria-hidden="true">${worked.map(([id, secs]) =>
+      `<span style="width:${(secs / dayLen * 100).toFixed(2)}%;background:${esc(colorOf(id))}"></span>`).join("")}</div>`;
   const due = backupDue(now);
   if (due) html += `<button class="linkish backup-due" data-act="open-export">${esc(due)}</button>`;
   el.innerHTML = html;
@@ -367,7 +386,7 @@ function groupWeek(g, run) {
 function renderGroups(now, run) {
   const top = document.getElementById("top");
   const groups = S.config.groups;
-  top.style.gridTemplateColumns = `minmax(0, 13rem) repeat(${Math.max(1, groups.length)}, minmax(0, 1fr))`;
+  top.style.gridTemplateColumns = `minmax(0, ${NOW_COL}) repeat(${Math.max(1, groups.length)}, minmax(0, 1fr))`;
 
   let html = `<section id="now"></section>`;
   if (!groups.length) {
@@ -383,7 +402,7 @@ function renderGroups(now, run) {
       else if (diff < 0) pace = `<div class="grp-pace behind">${hm(-diff)} behind pace</div>`;
       else pace = `<div class="grp-pace">${hm(diff)} ahead of pace</div>`;
     }
-    const target = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h goal ·</span>` : "";
+    const target = goalHtml(week, g.weekly_target_hours);
 
     let tasks = "";
     for (const p of S.config.active.filter(p => p.group === g.id)) {
@@ -394,7 +413,7 @@ function renderGroups(now, run) {
       tasks += `<button class="task-btn${on ? " on" : ""}${held ? " held" : ""}" data-task="${esc(p.id)}"${style}>
         <span class="sw" style="background:${color}"></span>
         <span class="name"><span class="nm">${esc(p.label)}</span>${p.due ? dueHtml(p.due) : ""}</span>
-        ${on ? `<span class="t">pause</span>` : held ? `<span class="t">paused</span>` : ""}
+        ${on ? `<span class="t" title="Tap to pause">❚❚</span>` : held ? `<span class="t">paused</span>` : ""}
       </button>`;
     }
     if (g.id !== "_other") {
@@ -632,7 +651,7 @@ function clearHtml() {
 
 function renderSessions(now, run) {
   const top = document.getElementById("top");
-  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
+  top.style.gridTemplateColumns = `minmax(0, ${NOW_COL}) minmax(0, 1fr)`;
 
   let body = "";
   if (linksMode) {
@@ -719,7 +738,7 @@ function weekTotals(monday, now, run) {
 
 function renderWeeks(now, run) {
   const top = document.getElementById("top");
-  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
+  top.style.gridTemplateColumns = `minmax(0, ${NOW_COL}) minmax(0, 1fr)`;
   const base = mondayOf(now);
   const monday = new Date(base.getFullYear(), base.getMonth(), base.getDate() + weekOffset * 7);
   const t = weekTotals(monday, now, run);
@@ -740,14 +759,11 @@ function renderWeeks(now, run) {
     const ids = tasks.map(p => p.id).concat(unknown);
     const sum = ids.reduce((x, id) => x + (t.byTask[id] || 0), 0);
     if (!sum && g.id === "_other") continue;
-    const goal = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h goal ·</span>` : "";
-    const met = g.weekly_target_hours > 0 ? (sum >= g.weekly_target_hours * 3600 ? `<span class="tag ok">goal met</span>` : `<span class="q">${hm(g.weekly_target_hours * 3600 - sum)} to go</span>`) : "";
-    groups += `<div class="day-h"><span>${esc(g.label)}</span><span><b class="wk-sum">${hm(sum)}</b>${goal} ${weekOffset < 0 || sum >= g.weekly_target_hours * 3600 ? met : ""}</span></div>`;
+    groups += `<div class="day-h"><span>${esc(g.label)}</span><span><b class="wk-sum">${hm(sum)}</b>${goalHtml(sum, g.weekly_target_hours)}</span></div>`;
     for (const id of ids.sort((a, b) => t.byTask[b] - t.byTask[a])) {
       groups += `<div class="row wk-row">
         <span class="sw" style="background:${esc(colorOf(id))}"></span>
-        <span class="r-task">${esc(labelOf(id))}</span>
-        <span class="r-note">${t.counts[id] || 1} session${(t.counts[id] || 1) === 1 ? "" : "s"}</span>
+        <span class="r-task">${esc(labelOf(id))}<span class="r-grp">${t.counts[id] || 1} session${(t.counts[id] || 1) === 1 ? "" : "s"}</span></span>
         <span class="r-dur">${hm(t.byTask[id])}</span>
       </div>`;
     }
@@ -836,7 +852,7 @@ function describeChange(e) {
 
 function renderHistory(now, run) {
   const top = document.getElementById("top");
-  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
+  top.style.gridTemplateColumns = `minmax(0, ${NOW_COL}) minmax(0, 1fr)`;
   let body = "";
   if (history === null) body = `<div class="empty">Loading the change log…</div>`;
   else if (!history.length) body = `<div class="empty">No changes yet. Edits, deletions, sessions added by hand and fixes to the timer will be listed here.</div>`;
@@ -880,7 +896,7 @@ function taskHours(id) {
 
 function renderTaskList(now, run) {
   const top = document.getElementById("top");
-  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
+  top.style.gridTemplateColumns = `minmax(0, ${NOW_COL}) minmax(0, 1fr)`;
   let body = "";
   for (const g of S.config.groups) {
     const items = S.config.active.filter(p => p.group === g.id);
@@ -903,7 +919,10 @@ function renderTaskList(now, run) {
           <select id="group-${k}" data-group="${k}" aria-label="Group for ${esc(p.label)}">${groupOpts}</select>
         </span>
         <span class="r-note">${hm(taskHours(p.id))} logged</span>
-        <label class="r-due"><span class="lbl">Due</span><input type="date" id="due-${k}" data-due="${k}" value="${esc(p.due)}" aria-label="Due date for ${esc(p.label)}"></label>
+        ${p.due || dueOpen === p.id
+          ? `<span class="r-due"><span class="lbl">Due</span><input type="date" id="due-${k}" data-due="${k}" value="${esc(p.due)}" aria-label="Due date for ${esc(p.label)}">
+             ${p.due ? `<button class="x-stretch" data-act="clear-due" data-task="${k}" aria-label="Remove due date for ${esc(p.label)}" title="Remove due date">✕</button>` : ""}</span>`
+          : `<span class="r-due"><button class="pill quiet" data-act="set-due" data-task="${k}" aria-label="Set a due date for ${esc(p.label)}">No due date</button></span>`}
         <span class="r-btns">${done}</span>
       </div>`;
     }
@@ -1814,11 +1833,19 @@ document.addEventListener("click", e => {
     if (a === "week-next") { weekOffset = Math.min(0, weekOffset + 1); render(); return; }
     if (a === "week-this") { weekOffset = 0; render(); return; }
     if (a === "week-export") { exportCsv(btn.dataset.from, btn.dataset.to); return; }
-    if (a === "tasklist") { view = "tasklist"; adding = null; completing = null; sessError = ""; redrawTaskList(); return; }
+    if (a === "tasklist") { view = "tasklist"; adding = null; completing = null; dueOpen = null; sessError = ""; redrawTaskList(); return; }
     if (view === "tasklist") {
       const id = btn.dataset.task;
       if (a === "tasks-done") { view = "tasks"; completing = null; render(); }
       else if (a === "complete") { completing = id; redrawTaskList(); }
+      else if (a === "set-due") {
+        dueOpen = id; redrawTaskList();
+        const input = document.getElementById("due-" + id);
+        if (input) { input.focus(); try { input.showPicker(); } catch (_) {} }
+      }
+      else if (a === "clear-due") {
+        updateTask(id, {due: null}).then(ok => { redrawTaskList(); if (ok) showSessError("Saved", true); });
+      }
       else if (a === "complete-no") { completing = null; redrawTaskList(); }
       else if (a === "complete-yes") {
         const date = (document.getElementById("done-" + id) || {}).value || todayKey();
@@ -1904,7 +1931,7 @@ document.addEventListener("click", e => {
 document.addEventListener("change", e => {
   const t = e.target;
   let job = null;
-  if (t.dataset.due) job = updateTask(t.dataset.due, {due: t.value || null});
+  if (t.dataset.due) { dueOpen = null; job = updateTask(t.dataset.due, {due: t.value || null}); }
   else if (t.dataset.label) job = updateTask(t.dataset.label, {label: t.value});
   else if (t.dataset.color) job = updateTask(t.dataset.color, {color: t.value});
   else if (t.dataset.group) job = updateTask(t.dataset.group, {group: t.value});
@@ -1921,7 +1948,7 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (stopAtOpen) { closeStopAt(); return; }
   if (view === "sessions" && sessEditing()) { closeEditors(); redrawSessions(); }
-  else if (view === "tasklist" && completing) { completing = null; redrawTaskList(); }
+  else if (view === "tasklist" && (completing || dueOpen)) { completing = null; dueOpen = null; redrawTaskList(); }
   else if (adding) { adding = null; render(); }
 });
 

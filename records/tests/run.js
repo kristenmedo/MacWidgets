@@ -42,6 +42,7 @@ const fmt = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())
 const day = (offset, h = 0, m = 0, s = 0) => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate() + offset, h, m, s); };
 const at = (offset, h, m, s = 0) => fmt(day(offset, h, m, s));
 const monday = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return new Date(x.getFullYear(), x.getMonth(), x.getDate() - ((x.getDay() + 6) % 7)); };
+const dayKeyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const weekKey = d => { const m = monday(d); return `${m.getFullYear()}-${pad(m.getMonth() + 1)}-${pad(m.getDate())}`; };
 
 async function open(browser, {clock, docs = {}, width = 2560, height = 720} = {}) {
@@ -235,6 +236,29 @@ const shot = async (page, name) => { if (shots) await page.screenshot({path: pat
       const back = await p.$("[data-act=done], [data-act=tasks-done], [data-act=to-tasks]");
       if (back) { await back.click(); await settle(p); }
     }
+    await p.close();
+  }
+
+  // 9. Main screen with task keys: idle with today's work, then a running timer.
+  {
+    const cfg = {...CONFIG, tasks: [...CONFIG.tasks,
+      {id: "rep", label: "Quarterly report", color: "#BF5AF2", group: "rs", due: dayKeyOf(day(3))},
+      {id: "grant", label: "Grant renewal", color: "#FF375F", group: "cu", due: dayKeyOf(day(-1))}]};
+    const p = await open(browser, {clock: day(0, 11, 0), docs: {"setup/config": cfg, "setup/meta": {last_backup: at(-1, 17, 0)},
+      [`weeks/${thisWeek}`]: {week: thisWeek, sessions: [
+        {id: "m1", project: "mds", start: at(0, 8, 40), end: at(0, 10, 5)},
+        {id: "m2", project: "meet", start: at(0, 10, 10), end: at(0, 10, 45)}]}}});
+    await shot(p, "main-idle");
+    await p.click('[data-task="rep"]'); await settle(p);
+    await advance(p, 52);
+    const keys = await p.$$eval(".task-btn[data-task]", els => els.length);
+    check("main screen shows every open task key", keys === 5, keys);
+    const elapsed = await p.textContent("#now .elapsed");
+    check("timer shows no seconds", /^\d+h\d\dm$/.test(elapsed.replace(/\s/g, "")), elapsed);
+    await shot(p, "main-running");
+    const fits = await p.$eval("#now", el => el.scrollHeight <= el.clientHeight + 1);
+    check("timer column fits without scrolling at 2560x720", fits);
+    check("no page errors (main)", !p.errors.length, p.errors);
     await p.close();
   }
 
