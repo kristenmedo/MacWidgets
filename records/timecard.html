@@ -162,7 +162,10 @@
   .task-btn.held .t { color: var(--text); }
 
   /* Tasks: due dates and completion */
-  #now .now-btns { display: flex; gap: 0.4rem; margin-top: 0.8rem; flex-wrap: wrap; }
+  #now { overflow-y: auto; }
+  #now .now-btns { display: flex; flex-wrap: nowrap; gap: 0.3rem; margin-top: 0.55rem; }
+  #now .now-btns .pill { padding: 0.2rem 0.4rem; font-size: 0.62rem; flex: none; }
+  #now .elapsed { font-size: 2.7rem; margin-top: 0.3rem; }
   .task-btn .name { display: flex; flex-direction: column; justify-content: center; line-height: 1.15; }
   .task-btn .nm { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .task-btn .due { font-size: 0.6rem; color: var(--muted); white-space: nowrap; }
@@ -170,7 +173,6 @@
   .task-btn .due.today { color: var(--text); }
   .task-btn .due.over { color: var(--err); }
   .add-form input[type=date] { flex: none; width: 8.2rem; color-scheme: dark; }
-  .task-row { grid-template-columns: 0.35rem minmax(0, 1.4fr) 7rem 11rem auto; }
   .task-row .r-note { font-variant-numeric: tabular-nums; }
   .r-due { display: flex; align-items: center; gap: 0.4rem; color: var(--muted); white-space: nowrap; }
   .r-due input, .r-btns input[type=date] {
@@ -178,6 +180,69 @@
     padding: 0.2rem 0.4rem; font-size: 0.7rem; color: var(--text); color-scheme: dark;
   }
   .task-row.done .r-task { color: var(--muted); }
+
+  /* Forgotten timer, Stop at, backup reminder */
+  #now .since.run-warn { color: var(--err); }
+  .linkish.urgent { color: var(--err); }
+  .sess-head .q { font-size: 0.7rem; color: var(--muted); margin-left: auto; text-align: right; }
+  .linkish { background: none; border: 0; padding: 0; margin-top: 0.45rem; color: var(--muted); font-size: 0.65rem;
+    text-align: left; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
+  .linkish:hover { color: var(--text); }
+  .backup-due { color: var(--err); margin-top: 0.3rem; }
+  #dialog { position: fixed; z-index: 20; top: 2.5rem; left: 50%; transform: translateX(-50%);
+    width: min(36rem, calc(100% - 32px)); padding: 1rem 1.2rem; background: var(--tape);
+    border: 2px solid var(--muted); border-radius: var(--key-radius); box-shadow: 0 0.6rem 2rem #000; }
+  .stop-at { display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.8rem; }
+  .stop-at h3 { margin: 0; font-size: 0.95rem; font-weight: 600; }
+  .stop-at .q { margin: 0; }
+  .stop-at .row-line { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .stop-at input { background: var(--ground); border: 2px solid var(--key-edge); border-radius: 0.5rem; color: var(--text);
+    padding: 0.3rem 0.5rem; font-size: 0.8rem; color-scheme: dark; max-width: 100%; }
+  .stop-err { color: var(--err); font-size: 0.75rem; }
+  .stop-err:empty { display: none; }
+  #toast button { margin-left: 0.4rem; font-size: 0.8rem; }
+
+  /* Export panel */
+  .export-panel h3 { margin: 0.3rem 0 0; font-size: 0.85rem; font-weight: 600; }
+  .export-panel .range { align-items: center; flex-wrap: wrap; }
+  .export-panel input[type=date] { background: var(--ground); border: 2px solid var(--key-edge); border-radius: 0.5rem;
+    color: var(--text); padding: 0.2rem 0.4rem; font-size: 0.75rem; color-scheme: dark; }
+
+  /* Weeks */
+  .wk-days { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 0.4rem; margin: 0.3rem 0 0.4rem; }
+  .wk-day { display: flex; flex-direction: column; gap: 0.1rem; padding: 0.4rem 0.6rem; font-size: 0.8rem;
+    background: var(--tape); border: 2px solid var(--key-edge); border-radius: var(--key-radius); }
+  .wk-day b { font-weight: 600; }
+  .wk-day.today { border-color: var(--muted); }
+  .wk-day.total { background: var(--rule); }
+  .wk-row { grid-template-columns: 0.35rem minmax(0, 1.5fr) minmax(0, 1fr) 6rem; }
+  .wk-sum { font-weight: 600; color: var(--text); }
+  .tag.ok { color: var(--good); border-color: var(--good); }
+  .pill:disabled { opacity: 0.4; cursor: default; }
+
+  /* History */
+  .hist-row { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 0.7rem; padding: 0.35rem 0;
+    border-bottom: 1px solid var(--line); font-size: 0.75rem; }
+  .hist-title { font-weight: 600; }
+  .hist-line { color: var(--muted); font-size: 0.7rem; }
+
+  /* Tasks: editing */
+  .sw-pick { width: 1.6rem; height: 1.6rem; padding: 0; border: 2px solid var(--key-edge); border-radius: 0.4rem;
+    background: none; cursor: pointer; }
+  .sw-pick::-webkit-color-swatch-wrapper { padding: 2px; }
+  .sw-pick::-webkit-color-swatch { border: 0; border-radius: 0.2rem; }
+  .task-row { grid-template-columns: 1.6rem minmax(0, 1.6fr) 7rem 11rem auto; }
+  .task-row.done { grid-template-columns: 0.35rem minmax(0, 1.6fr) 7rem 11rem auto; }
+  .task-edit { display: flex; gap: 0.4rem; align-items: center; }
+  .task-edit input, .task-edit select, .goal input {
+    background: var(--ground); border: 2px solid var(--key-edge); border-radius: 0.5rem; color: var(--text);
+    padding: 0.2rem 0.45rem; font-size: 0.75rem; color-scheme: dark; min-width: 0;
+  }
+  .task-edit input { flex: 1; }
+  .task-edit select { flex: none; max-width: 9rem; }
+  .goal { display: flex; align-items: center; gap: 0.35rem; }
+  .goal input { width: 4.2rem; }
+  .tasks-help { margin: 0.5rem 0 0; }
 
   /* Move picker */
   .mover { padding: 0.5rem 0.6rem 0.6rem; margin: 0.2rem 0 0.4rem; background: var(--tape);
@@ -253,7 +318,9 @@
     .row .r-note { flex-basis: 100%; }
     .row .r-btns { margin-left: auto; }
     .link-row { grid-template-columns: 0.35rem minmax(0, 1fr) auto; }
-    .task-row { display: flex; flex-wrap: wrap; }
+    .task-row, .task-row.done { display: flex; flex-wrap: wrap; }
+    .wk-days { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .hist-row { grid-template-columns: 4rem minmax(0, 1fr); }
     .add-form { grid-column: 1 / -1; flex-wrap: wrap; }
     .link-row .link-url { grid-column: 2 / -1; }
     #warn { position: static; max-width: none; white-space: normal; padding: 0 16px 12px; text-align: left; }
@@ -268,6 +335,7 @@
 </div>
 <div id="warn"></div>
 <div id="toast" role="status" aria-live="polite"></div>
+<div id="dialog" hidden></div>
 <script>
 "use strict";
 
@@ -311,6 +379,13 @@ let toastTimer = null;
 const PAGE_URL = "https://claude.ai/artifact/VyeWkAHizu5cr5MNt8BM2t";
 let pendingCmd = null;
 let actionError = "";
+let meta = {};              // setup/meta: {last_backup}
+let toastAction = null;     // {label, fn} for the banner's button (Undo)
+let stopAtOpen = false;     // the "Stop at…" time box under the timer
+let exportMode = false;     // export / backup panel in Sessions
+let history = null;         // change log entries, newest first (History view)
+let weekOffset = 0;         // Weeks view: 0 = this week, -1 = last week, …
+const TAB_ID = Math.random().toString(36).slice(2);
 
 const DEFAULTS = {day_start: "08:30", day_hours: 8, workdays: [0, 1, 2, 3, 4]};
 const PALETTES = [
@@ -524,6 +599,40 @@ function expectedByNow(target, now) {
 
 // ---------------------------------------------------------------- rendering: tasks view
 
+// A timer probably left running: this stretch began on an earlier day, has
+// gone 3 hours, or it's an hour past the end of the working day.
+function forgotten(run, now) {
+  if (!run || run.paused || !run.start) return false;
+  if (dayKey(run.start) !== dayKey(now)) return true;
+  if (now - run.start >= 3 * 3600000) return true;
+  const [sh, sm] = S.config.day_start.split(":").map(Number);
+  const end = new Date(now.getFullYear(), now.getMonth(), now.getDate(), sh, sm + S.config.day_hours * 60);
+  return now - end >= 3600000 && run.start < end;
+}
+
+function whenLabel(d, now) {
+  const diff = Math.round((new Date(now.getFullYear(), now.getMonth(), now.getDate()) - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  return clock(d) + (diff === 0 ? "" : diff === 1 ? " yesterday" : " " + shortDate(dayKey(d)));
+}
+
+// Default for "Stop at": the end of the working day the stretch began on, if
+// that's already past; otherwise now.
+function suggestStop(run, now) {
+  const [sh, sm] = S.config.day_start.split(":").map(Number);
+  const s = run.start;
+  const end = new Date(s.getFullYear(), s.getMonth(), s.getDate(), sh, sm + S.config.day_hours * 60);
+  const t = end > s && end < now ? end : now;
+  return new Date(Math.floor(t / 60000) * 60000);
+}
+
+function backupDue(now) {
+  if (!S.sessions.length) return "";
+  const last = meta && parseTs(meta.last_backup);
+  if (!last) return "No backup yet · Back up";
+  const days = Math.floor((now - last) / 86400000);
+  return days >= 7 ? `Backup ${days} days old · Back up` : "";
+}
+
 function renderNow(now, run) {
   const el = document.getElementById("now");
   if (!el) return;
@@ -543,13 +652,16 @@ function renderNow(now, run) {
     html = `<div class="task">${esc(labelOf(run.id))}</div>
       <div class="group">${esc(groupLabel(run.id))}${known ? "" : " · not in setup"}</div>
       <div class="elapsed${run.paused ? " paused" : ""}">${h}<span class="u">h</span>${pad(m)}<span class="u">m</span></div>
-      <div class="since">${esc(since)}</div>
+      ${!run.paused && forgotten(run, now)
+        ? `<div class="since run-warn">Started ${esc(whenLabel(run.start, now))}. Still working?</div>`
+        : `<div class="since">${esc(since)}</div>`}
       <div class="ctrl-btns">
         ${run.paused
           ? `<button class="ctrl" data-act="resume" style="--c:${esc(colorOf(run.id))}">▶ Resume</button>`
           : `<button class="ctrl" data-act="pause">❚❚ Pause</button>`}
         <button class="ctrl" data-act="stop">■ Stop</button>
-      </div>`;
+      </div>
+      ${run.paused ? "" : `<button class="linkish${forgotten(run, now) ? " urgent" : ""}" data-act="stop-at">Stop at an earlier time…</button>`}`;
   } else {
     html = `<div class="task">Not tracking</div>
       <div class="group">Tap a task to start</div>`;
@@ -559,8 +671,12 @@ function renderNow(now, run) {
       html += `<div class="ctrl-btns"><button class="ctrl cont" data-act="continue" data-sid="${esc(last.id)}" style="--c:${esc(colorOf(last.project))}">▶ Resume ${esc(lastTask.label)}</button></div>`;
     }
   }
-  if (view === "tasks") html += `<div class="now-btns"><button class="pill" data-act="sessions">Sessions</button><button class="pill" data-act="tasklist">Tasks</button></div>`;
+  if (view === "tasks") html += `<div class="now-btns">
+      <button class="pill" data-act="sessions">Sessions</button><button class="pill" data-act="tasklist">Tasks</button>
+      <button class="pill" data-act="weeks">Weeks</button><button class="pill" data-act="history">History</button></div>`;
   html += `<div class="today"><b>${hm(today)}</b> today of ${S.config.day_hours}h</div>`;
+  const due = backupDue(now);
+  if (due) html += `<button class="linkish backup-due" data-act="open-export">${esc(due)}</button>`;
   el.innerHTML = html;
 }
 
@@ -590,7 +706,7 @@ function groupWeek(g, run) {
 function renderGroups(now, run) {
   const top = document.getElementById("top");
   const groups = S.config.groups;
-  top.style.gridTemplateColumns = `minmax(0, 11rem) repeat(${Math.max(1, groups.length)}, minmax(0, 1fr))`;
+  top.style.gridTemplateColumns = `minmax(0, 13rem) repeat(${Math.max(1, groups.length)}, minmax(0, 1fr))`;
 
   let html = `<section id="now"></section>`;
   if (!groups.length) {
@@ -701,7 +817,7 @@ function renderStrip(now, run) {
 // ---------------------------------------------------------------- rendering: sessions view
 
 function sessEditing() {
-  return !!(sessEdit || sessConfirm || clearMode || sessMove || linksMode);
+  return !!(sessEdit || sessConfirm || clearMode || sessMove || linksMode || exportMode);
 }
 
 function dayLabel(d, now) {
@@ -855,11 +971,13 @@ function clearHtml() {
 
 function renderSessions(now, run) {
   const top = document.getElementById("top");
-  top.style.gridTemplateColumns = "minmax(0, 11rem) minmax(0, 1fr)";
+  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
 
   let body = "";
   if (linksMode) {
     body = linksHtml();
+  } else if (exportMode) {
+    body = exportHtml(now);
   } else if (clearMode) {
     body = clearHtml();
   } else {
@@ -895,7 +1013,7 @@ function renderSessions(now, run) {
       <div class="sess-head">
         <div class="grp-name">Sessions</div>
         <button class="pill" data-act="add">+ Add session</button>
-        ${downloads ? `<button class="pill" data-act="export">Export CSV</button>` : ""}
+        ${downloads ? `<button class="pill" data-act="export">Export…</button>` : ""}
         <button class="pill" data-act="clear">Clear…</button>
         <button class="pill strong" data-act="done">Done</button>
       </div>
@@ -908,31 +1026,221 @@ function renderSessions(now, run) {
   if (open) open.scrollIntoView({block: "nearest"});
 }
 
+// ---------------------------------------------------------------- rendering: weeks
+
+// Worked seconds per task and per day for the week starting at monday,
+// splitting stretches at midnight. Includes the running stretch.
+function weekTotals(monday, now, run) {
+  const end = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 7);
+  const byTask = {}, byDay = [0, 0, 0, 0, 0, 0, 0], counts = {};
+  const add = (task, a, b) => {
+    a = new Date(Math.max(a, monday)); b = new Date(Math.min(b, end, now));
+    while (a < b) {
+      const next = new Date(a.getFullYear(), a.getMonth(), a.getDate() + 1);
+      const stop = b < next ? b : next;
+      const secs = (stop - a) / 1000;
+      byTask[task] = (byTask[task] || 0) + secs;
+      byDay[(a.getDay() + 6) % 7] += secs;
+      a = stop;
+    }
+  };
+  for (const s of S.sessions) {
+    let touched = false;
+    for (const [sa, sb] of stretchesOf(s)) {
+      const a = parseTs(sa), b = parseTs(sb);
+      if (b > monday && a < end) { add(s.project, a, b); touched = true; }
+    }
+    if (touched) counts[s.project] = (counts[s.project] || 0) + 1;
+  }
+  if (run && !run.paused && run.start < end && now > monday) add(run.id, run.start, now);
+  return {byTask, byDay, counts, end};
+}
+
+function renderWeeks(now, run) {
+  const top = document.getElementById("top");
+  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
+  const base = mondayOf(now);
+  const monday = new Date(base.getFullYear(), base.getMonth(), base.getDate() + weekOffset * 7);
+  const t = weekTotals(monday, now, run);
+  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + 6);
+  const title = `${shortDate(dayKey(monday))} – ${shortDate(dayKey(sunday))}`;
+  const total = t.byDay.reduce((x, y) => x + y, 0);
+
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((d, i) => {
+    const date = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i);
+    const today = dayKey(date) === dayKey(now);
+    return `<div class="wk-day${today ? " today" : ""}"><span class="lbl">${d} ${date.getDate()}</span><b>${t.byDay[i] ? hm(t.byDay[i]) : "–"}</b></div>`;
+  }).join("");
+
+  let groups = "";
+  for (const g of S.config.groups) {
+    const tasks = S.config.projects.filter(p => p.group === g.id && t.byTask[p.id]);
+    const unknown = g.id === "_other" ? Object.keys(t.byTask).filter(id => !projectMap()[id]) : [];
+    const ids = tasks.map(p => p.id).concat(unknown);
+    const sum = ids.reduce((x, id) => x + (t.byTask[id] || 0), 0);
+    if (!sum && g.id === "_other") continue;
+    const goal = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h</span>` : "";
+    const met = g.weekly_target_hours > 0 ? (sum >= g.weekly_target_hours * 3600 ? `<span class="tag ok">goal met</span>` : `<span class="q">${hm(g.weekly_target_hours * 3600 - sum)} short</span>`) : "";
+    groups += `<div class="day-h"><span>${esc(g.label)}</span><span><b class="wk-sum">${hm(sum)}</b>${goal} ${weekOffset < 0 || sum >= g.weekly_target_hours * 3600 ? met : ""}</span></div>`;
+    for (const id of ids.sort((a, b) => t.byTask[b] - t.byTask[a])) {
+      groups += `<div class="row wk-row">
+        <span class="sw" style="background:${esc(colorOf(id))}"></span>
+        <span class="r-task">${esc(labelOf(id))}</span>
+        <span class="r-note">${t.counts[id] || 1} session${(t.counts[id] || 1) === 1 ? "" : "s"}</span>
+        <span class="r-dur">${hm(t.byTask[id])}</span>
+      </div>`;
+    }
+    if (!ids.length) groups += `<div class="empty">No time logged.</div>`;
+  }
+
+  top.innerHTML = `<section id="now"></section>
+    <section class="sess">
+      <div class="sess-head">
+        <div class="grp-name">Week of ${esc(title)}</div>
+        <button class="pill" data-act="week-prev" aria-label="Previous week">‹ Previous</button>
+        <button class="pill" data-act="week-this"${weekOffset === 0 ? " disabled" : ""}>This week</button>
+        <button class="pill" data-act="week-next"${weekOffset >= 0 ? " disabled" : ""} aria-label="Next week">Next ›</button>
+        ${downloads ? `<button class="pill" data-act="week-export" data-from="${dayKey(monday)}" data-to="${dayKey(sunday)}">Export this week</button>` : ""}
+        <button class="pill strong" data-act="to-tasks">Done</button>
+      </div>
+      <div class="sess-err">${esc(sessError)}</div>
+      <div class="sess-list">
+        <div class="wk-days">${days}<div class="wk-day total"><span class="lbl">Total</span><b>${hm(total)}</b></div></div>
+        ${groups}
+      </div>
+    </section>`;
+  renderNow(now, run);
+}
+
+// ---------------------------------------------------------------- rendering: history
+
+async function loadHistory() {
+  history = null;
+  try {
+    const q = await db.collection("changes").get();
+    const all = [];
+    for (const d of q.docs) for (const e of (d.data() || {}).entries || []) all.push(e);
+    all.sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+    history = all;
+  } catch (e) {
+    history = [];
+    sessError = "Couldn't load the change log. Try again.";
+  }
+}
+
+function sessionLine(s) {
+  if (!s || !s.start) return "";
+  const a = parseTs(s.start), b = parseTs(s.end);
+  const parts = stretchesOf(s);
+  return `${labelOf(s.project)} · ${shortDate(dayKey(a))}, ${clock(a)} – ${clock(b)} · ${hm(workedSecs(s))}`
+    + (parts.length > 1 ? ` in ${parts.length} stretches` : "") + (s.note ? ` · “${s.note}”` : "");
+}
+
+function timerLine(r) {
+  if (!r) return "";
+  const start = parseTs(r.start);
+  return `${labelOf(r.project)}` + (r.paused ? " (paused)" : start ? ` since ${whenLabel(start, new Date())}` : "");
+}
+
+function describeChange(e) {
+  const b = e.before, a = e.after;
+  switch (e.action) {
+    case "add": return ["Added a session", [sessionLine(a)]];
+    case "edit": return ["Edited a session", [`Before: ${sessionLine(b)}`, `After: ${sessionLine(a)}`]];
+    case "delete": return ["Deleted a session", [sessionLine(b)]];
+    case "undo-delete": return ["Restored a deleted session", [sessionLine(a)]];
+    case "reassign": return [`Moved a session from ${labelOf(b && b.project)} to ${labelOf(a && a.project)}`, [sessionLine(a)]];
+    case "clear": return [`Cleared ${e.scope === "today" ? "today's" : e.scope === "week" ? "this week's" : "all"} sessions`, [`${e.count} session${e.count === 1 ? "" : "s"} removed (kept in the change log)`]];
+    case "edit-running": return ["Changed the running timer", [`Before: ${timerLine(b)}`, `After: ${timerLine(a)}`]];
+    case "reassign-running": return [`Moved the running timer from ${labelOf(b && b.project)} to ${labelOf(a && a.project)}`, []];
+    case "discard-running": return ["Discarded the running timer", [timerLine(b)]];
+    case "undo-discard": return ["Restored a discarded timer", [timerLine(a)]];
+    case "stop-at": return [`Stopped ${labelOf(b && b.project)} at ${e.stopped_at ? whenLabel(parseTs(e.stopped_at), new Date()) : "an earlier time"}`, [`The timer had been left running since ${b && b.start ? whenLabel(parseTs(b.start), new Date()) : "earlier"}`]];
+    case "task": {
+      const name = (a && a.label) || (b && b.label) || e.task;
+      const lines = [];
+      if (b && a) {
+        if (b.label !== a.label) lines.push(`Renamed from “${b.label}” to “${a.label}”`);
+        if ((b.due || "") !== (a.due || "")) lines.push(a.due ? `Due ${shortDate(a.due)}` : "Due date removed");
+        if ((b.completed || "") !== (a.completed || "")) lines.push(a.completed ? `Completed ${shortDate(a.completed)}` : "Reopened");
+        if (b.color !== a.color) lines.push("Colour changed");
+        if (b.group !== a.group) lines.push(`Moved to ${(S.config.groups.find(g => g.id === a.group) || {}).label || a.group}`);
+      }
+      return [`Changed task ${name}`, lines];
+    }
+    case "group": return [`Changed ${e.label || e.group}`, [`Weekly goal ${e.before}h → ${e.after}h`]];
+    default: return [e.action, []];
+  }
+}
+
+function renderHistory(now, run) {
+  const top = document.getElementById("top");
+  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
+  let body = "";
+  if (history === null) body = `<div class="empty">Loading the change log…</div>`;
+  else if (!history.length) body = `<div class="empty">No changes yet. Edits, deletions, sessions added by hand and fixes to the timer will be listed here.</div>`;
+  else {
+    let day = null;
+    for (const e of history) {
+      const at = parseTs(e.at);
+      if (!at) continue;
+      const key = dayKey(at);
+      if (key !== day) {
+        day = key;
+        body += `<div class="day-h"><span>${esc(dayLabel(at, now))}</span><span></span></div>`;
+      }
+      const [title, lines] = describeChange(e);
+      body += `<div class="hist-row">
+        <span class="r-time">${clock(at)}</span>
+        <div><div class="hist-title">${esc(title)}</div>${lines.filter(Boolean).map(l => `<div class="hist-line">${esc(l)}</div>`).join("")}</div>
+      </div>`;
+    }
+  }
+  top.innerHTML = `<section id="now"></section>
+    <section class="sess">
+      <div class="sess-head">
+        <div class="grp-name">History</div>
+        <span class="q">Every change to your recorded time, newest first. Normal starts and stops aren't listed.</span>
+        <button class="pill strong" data-act="to-tasks">Done</button>
+      </div>
+      <div class="sess-err">${esc(sessError)}</div>
+      <div class="sess-list">${body}</div>
+    </section>`;
+  renderNow(now, run);
+}
+
 // ---------------------------------------------------------------- rendering: tasks list
 
 function taskHours(id) {
   let secs = 0;
-  for (const s of S.sessions) if (s.project === id) secs += (parseTs(s.end) - parseTs(s.start)) / 1000;
+  for (const s of S.sessions) if (s.project === id) secs += workedSecs(s);
   return secs;
 }
 
 function renderTaskList(now, run) {
   const top = document.getElementById("top");
-  top.style.gridTemplateColumns = "minmax(0, 11rem) minmax(0, 1fr)";
+  top.style.gridTemplateColumns = "minmax(0, 13rem) minmax(0, 1fr)";
   let body = "";
   for (const g of S.config.groups) {
     const items = S.config.active.filter(p => p.group === g.id);
     if (!items.length) continue;
-    body += `<div class="day-h"><span>${esc(g.label)}</span><span>${items.length} open</span></div>`;
+    const goal = g.id === "_other" ? "" : `<label class="goal"><span class="lbl">Weekly goal</span>
+        <input type="number" id="goal-${esc(g.id)}" data-goal="${esc(g.id)}" min="0" max="168" step="0.5" value="${g.weekly_target_hours}" aria-label="Weekly goal for ${esc(g.label)} in hours"><span class="lbl">h</span></label>`;
+    body += `<div class="day-h"><span>${esc(g.label)} · ${items.length} open</span>${goal}</div>`;
     for (const p of items) {
       const k = esc(p.id);
       const done = completing === p.id
         ? `<span class="q">Completed on</span><input type="date" id="done-${k}" value="${esc(todayKey())}" aria-label="Completion date">
            <button class="pill strong" data-act="complete-yes" data-task="${k}">Complete</button><button class="pill" data-act="complete-no">Cancel</button>`
         : `<button class="pill" data-act="complete" data-task="${k}">Complete</button>`;
+      const groupOpts = S.config.groups.filter(x => x.id !== "_other")
+        .map(x => `<option value="${esc(x.id)}"${x.id === p.group ? " selected" : ""}>${esc(x.label)}</option>`).join("");
       body += `<div class="row task-row">
-        <span class="sw" style="background:${esc(p.color || "#8E8E93")}"></span>
-        <span class="r-task">${esc(p.label)}</span>
+        <input type="color" class="sw-pick" id="color-${k}" data-color="${k}" value="${esc((p.color || "#8E8E93").toLowerCase())}" aria-label="Colour for ${esc(p.label)}" title="Change colour">
+        <span class="r-task task-edit">
+          <input id="label-${k}" data-label="${k}" value="${esc(p.label)}" maxlength="60" aria-label="Task name">
+          <select id="group-${k}" data-group="${k}" aria-label="Group for ${esc(p.label)}">${groupOpts}</select>
+        </span>
         <span class="r-note">${hm(taskHours(p.id))} logged</span>
         <label class="r-due"><span class="lbl">Due</span><input type="date" id="due-${k}" data-due="${k}" value="${esc(p.due)}" aria-label="Due date for ${esc(p.label)}"></label>
         <span class="r-btns">${done}</span>
@@ -940,6 +1248,7 @@ function renderTaskList(now, run) {
     }
   }
   if (!S.config.active.length) body += `<div class="empty">No open tasks. Add one with + Add task on the main screen.</div>`;
+  body += `<p class="q tasks-help">Change a name, colour, group or goal and it saves when you leave the field.</p>`;
   const finished = S.config.projects.filter(p => p.completed).sort((a, b) => (a.completed < b.completed ? 1 : -1));
   if (finished.length) {
     body += `<div class="day-h"><span>Completed</span><span>${finished.length}</span></div>`;
@@ -981,6 +1290,10 @@ function render() {
     else renderSessions(now, run);
   } else if (view === "tasklist") {
     renderNow(now, run);                       // its date fields redraw only after a save
+  } else if (view === "weeks") {
+    renderWeeks(now, run);
+  } else if (view === "history") {
+    renderHistory(now, run);
   } else if (adding) {
     renderNow(now, run);
   } else {
@@ -1042,7 +1355,29 @@ async function act(fn) {
   }
 }
 
-async function mutateWeek(key, fn) {
+// A short lease on a lock document, so two open copies of the page (the Edge
+// and a laptop) don't overwrite each other's change to the same record.
+// Leases expire on their own after a few seconds.
+async function withLock(name, fn) {
+  const ref = db.doc("locks/" + name);
+  for (let i = 0; i < 30; i++) {
+    let r;
+    try {
+      r = await ref.acquire({holder: TAB_ID, ttlMs: 4000});
+    } catch (e) {
+      return fn();   // leases unavailable here: save without one
+    }
+    if (r && r.acquired) return fn();
+    await new Promise(res => setTimeout(res, 150 + Math.random() * 250));
+  }
+  throw new UserError("Another device is saving. Try again in a moment.");
+}
+
+function mutateWeek(key, fn) {
+  return withLock("week-" + key, () => mutateWeekNow(key, fn));
+}
+
+async function mutateWeekNow(key, fn) {
   const ref = db.doc("weeks/" + key);
   const snap = await ref.get();
   const list = snap.exists ? (snap.data().sessions || []).map(s => ({...s})) : [];
@@ -1058,6 +1393,10 @@ async function mutateWeek(key, fn) {
 async function logChange(record) {
   const now = new Date();
   const key = weekKey(now);
+  return withLock("changes-" + key, () => logChangeNow(key, now, record));
+}
+
+async function logChangeNow(key, now, record) {
   const ref = db.doc("changes/" + key);
   const snap = await ref.get();
   const entries = snap.exists ? [...(snap.data().entries || [])] : [];
@@ -1106,7 +1445,7 @@ async function closeTimer(r, now) {
 }
 
 function startTask(project) {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     const now = new Date();
     const snap = await db.doc("timer/running").get();
     if (snap.exists && snap.data().project === project) {
@@ -1115,7 +1454,7 @@ function startTask(project) {
     }
     if (snap.exists) await closeTimer(snap.data(), now);
     await db.doc("timer/running").set({project, start: fmt(now)});
-  });
+  }));
 }
 
 async function resumeFrom(r, now) {
@@ -1127,7 +1466,7 @@ async function resumeFrom(r, now) {
 
 // Restarts the timer on an existing session: new time is added to it.
 function continueSession(id) {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     const now = new Date();
     const known = findSession(id);
     if (!known) throw new UserError("That session no longer exists");
@@ -1145,11 +1484,11 @@ function continueSession(id) {
       project: current.project, start: fmt(now), carried: Math.round(workedSecs(current)),
       session_id: id, session_week: known.week,
     });
-  });
+  }));
 }
 
 function pauseTimer() {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     const now = new Date();
     const snap = await db.doc("timer/running").get();
     if (!snap.exists || snap.data().paused) return;
@@ -1161,21 +1500,40 @@ function pauseTimer() {
     };
     if (link && link.id) { next.session_id = link.id; next.session_week = link.week; }
     await db.doc("timer/running").set(next);
-  });
+  }));
 }
 
 function resumeTimer() {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     const snap = await db.doc("timer/running").get();
     if (snap.exists && snap.data().paused) await resumeFrom(snap.data(), new Date());
-  });
+  }));
 }
 
 function stopTimer() {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     const snap = await db.doc("timer/running").get();
     if (snap.exists) await closeTimer(snap.data(), new Date());
-  });
+  }));
+}
+
+// Ends the running timer at an earlier time, for a timer left running.
+function stopAt(value) {
+  return act(() => withLock("timer", async () => {
+    const now = new Date();
+    const snap = await db.doc("timer/running").get();
+    if (!snap.exists) throw new UserError("Nothing is running");
+    const r = snap.data();
+    if (r.paused) throw new UserError("The timer is paused. Use Stop instead.");
+    const at = parseTs(value);
+    const start = parseTs(r.start);
+    if (!at) throw new UserError("Pick the time you stopped working");
+    if (at <= start) throw new UserError(`Pick a time after the timer started (${whenLabel(start, now)})`);
+    if (at > now) throw new UserError("That time is in the future");
+    await appendStretch(r, r.start, fmt(at));
+    await db.doc("timer/running").delete();
+    await logChange({action: "stop-at", before: r, stopped_at: fmt(at)});
+  }));
 }
 
 function slugify(label) {
@@ -1223,7 +1581,7 @@ function pickColor(tasks, groupIndex) {
 }
 
 function addTask(groupId, label, due) {
-  return act(async () => {
+  return act(() => withLock("config", async () => {
     label = label.split(/\s+/).filter(Boolean).join(" ");
     if (!label) throw new UserError("Task name is empty");
     const ref = db.doc("setup/config");
@@ -1243,18 +1601,29 @@ function addTask(groupId, label, due) {
     tasks.push(task);
     await ref.set(cfg);
     config = cfg;
-  });
+  }));
 }
 
 // Changes one task's due or completed date. null removes the field.
 function updateTask(id, patch) {
-  return act(async () => {
+  return act(() => withLock("config", async () => {
     const ref = db.doc("setup/config");
     const snap = await ref.get();
     if (!snap.exists) throw new UserError("Setup is missing");
     const cfg = JSON.parse(JSON.stringify(snap.data()));
     const task = (cfg.tasks || []).find(t => t.id === id);
     if (!task) throw new UserError("That task no longer exists");
+    if ("label" in patch) {
+      patch.label = String(patch.label || "").split(/\s+/).filter(Boolean).join(" ");
+      if (!patch.label) throw new UserError("A task needs a name");
+    }
+    if ("color" in patch) {
+      patch.color = String(patch.color).toUpperCase();
+      if (!/^#[0-9A-F]{6}$/.test(patch.color)) throw new UserError("Pick a colour");
+      const taken = (cfg.tasks || []).find(t => t.id !== id && String(t.color || "").toUpperCase() === patch.color);
+      if (taken) throw new UserError(`${taken.label} already uses that colour. Pick another so each task stays distinct.`);
+    }
+    if ("group" in patch && !(cfg.groups || []).some(g => g.id === patch.group)) throw new UserError("That group no longer exists");
     const before = {...task};
     for (const [k, v] of Object.entries(patch)) {
       if (v === null || v === "") delete task[k]; else task[k] = v;
@@ -1263,7 +1632,25 @@ function updateTask(id, patch) {
     await ref.set(cfg);
     config = cfg;
     await logChange({action: "task", task: id, before, after: {...task}});
-  });
+  }));
+}
+
+function updateGroup(id, target) {
+  return act(() => withLock("config", async () => {
+    if (!(target >= 0 && target <= 168)) throw new UserError("Enter a weekly goal between 0 and 168 hours");
+    const ref = db.doc("setup/config");
+    const snap = await ref.get();
+    if (!snap.exists) throw new UserError("Setup is missing");
+    const cfg = JSON.parse(JSON.stringify(snap.data()));
+    const g = (cfg.groups || []).find(x => x.id === id);
+    if (!g) throw new UserError("That group no longer exists");
+    if (g.target === target) return;
+    const before = g.target;
+    g.target = target;
+    await ref.set(cfg);
+    config = cfg;
+    await logChange({action: "group", group: id, label: g.label, before, after: target});
+  }));
 }
 
 function keepSeconds(value, original) {
@@ -1377,7 +1764,7 @@ function reassignSession(id, project) {
 }
 
 function reassignRunning(project) {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     checkProject(project);
     const snap = await db.doc("timer/running").get();
     if (!snap.exists) throw new UserError("Nothing is running");
@@ -1386,10 +1773,13 @@ function reassignRunning(project) {
     const after = {...before, project};
     await db.doc("timer/running").set(after);
     await logChange({action: "reassign-running", before, after});
-  });
+  }));
 }
 
+let lastRemoved = null;   // {session, week} from the latest delete, for Undo
+
 function deleteSession(id) {
+  lastRemoved = null;
   return act(async () => {
     const known = findSession(id);
     if (!known) return;
@@ -1401,7 +1791,22 @@ function deleteSession(id) {
       list.splice(i, 1);
       return list;
     });
-    if (removed) await logChange({action: "delete", before: removed});
+    if (removed) {
+      lastRemoved = {session: removed, week: known.week};
+      await logChange({action: "delete", before: removed});
+    }
+  });
+}
+
+function undoDelete(item) {
+  return act(async () => {
+    let restored = false;
+    await mutateWeek(item.week, list => {
+      if (list.some(x => x.id === item.session.id)) return null;
+      restored = true;
+      return [...list, item.session];
+    });
+    if (restored) await logChange({action: "undo-delete", after: item.session});
   });
 }
 
@@ -1435,7 +1840,7 @@ function clearSessions(scope) {
 }
 
 function updateRunning(f) {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     const snap = await db.doc("timer/running").get();
     if (!snap.exists) throw new UserError("Nothing is running");
     const before = snap.data();
@@ -1448,16 +1853,28 @@ function updateRunning(f) {
     if (after.project === before.project && after.start === before.start) return;
     await db.doc("timer/running").set(after);
     await logChange({action: "edit-running", before, after});
-  });
+  }));
+}
+
+let lastDiscarded = null;  // the timer from the latest Discard, for Undo
+
+function undoDiscard(timer) {
+  return act(() => withLock("timer", async () => {
+    const snap = await db.doc("timer/running").get();
+    if (snap.exists) throw new UserError("A timer is running now, so the discarded one can't come back. Add it as a session instead.");
+    await db.doc("timer/running").set(timer);
+    await logChange({action: "undo-discard", after: timer});
+  }));
 }
 
 function discardRunning() {
-  return act(async () => {
+  return act(() => withLock("timer", async () => {
     const snap = await db.doc("timer/running").get();
     if (!snap.exists) return;
     await db.doc("timer/running").delete();
+    lastDiscarded = snap.data();
     await logChange({action: "discard-running", before: snap.data()});
-  });
+  }));
 }
 
 function csvCell(v) {
@@ -1465,30 +1882,113 @@ function csvCell(v) {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
-async function exportCsv() {
+// Sessions whose start falls between two YYYY-MM-DD dates (inclusive);
+// no dates means everything.
+async function exportCsv(from, to) {
   const rows = [["date", "group", "task", "task_id", "start", "end", "hours", "stretches", "source", "note", "edited"]];
-  for (const s of [...S.sessions].reverse()) {
+  const picked = [...S.sessions].reverse().filter(s => {
+    const d = s.start.slice(0, 10);
+    return (!from || d >= from) && (!to || d <= to);
+  });
+  if (!picked.length) { showSessError("No sessions in that range."); return; }
+  for (const s of picked) {
     const parts = stretchesOf(s);
     rows.push([dayKey(parseTs(s.start)), groupLabel(s.project) || "Other", labelOf(s.project), s.project, s.start, s.end,
       (workedSecs(s) / 3600).toFixed(2), parts.map(([a, b]) => `${a.slice(11, 16)}-${b.slice(11, 16)}`).join("; "),
       s.source || "timer", s.note || "", s.edited || ""]);
   }
+  const total = picked.reduce((t, s) => t + workedSecs(s), 0);
+  rows.push(["total", "", "", "", "", "", (total / 3600).toFixed(2), "", "", "", ""]);
   const data = rows.map(r => r.map(csvCell).join(",")).join("\n") + "\n";
+  const name = from || to ? `timecard-${from || "start"}-to-${to || dayKey(new Date())}.csv` : `timecard-all-${dayKey(new Date())}.csv`;
   try {
-    await downloads.save({filename: `timecard-${dayKey(new Date())}.csv`, data});
+    await downloads.save({filename: name, data});
   } catch (e) {
     if (e && e.code !== "declined") showSessError("Export didn't start. Try again.");
   }
 }
 
+// Everything the page stores, change log included, as one JSON file.
+async function fullBackup() {
+  if (!db || !downloads) return;
+  const documents = {};
+  try {
+    for (const c of ["setup", "timer", "weeks", "changes"]) {
+      const q = await db.collection(c).get();
+      for (const d of q.docs) documents[`${c}/${d.id}`] = d.data();
+    }
+  } catch (e) {
+    showSessError("Couldn't read your records for the backup. Try again.");
+    return;
+  }
+  const now = new Date();
+  const data = JSON.stringify({format: "timecard-backup", version: 1, exported_at: fmt(now), page: PAGE_URL, documents}, null, 2);
+  try {
+    await downloads.save({filename: `timecard-backup-${dayKey(now)}.json`, data});
+  } catch (e) {
+    if (e && e.code !== "declined") showSessError("Backup didn't start. Try again.");
+    return;
+  }
+  try {
+    await db.doc("setup/meta").set({...meta, last_backup: fmt(now)});
+    meta = {...meta, last_backup: fmt(now)};
+  } catch (e) { /* the file is saved; the reminder just won't reset */ }
+  showSessError("Backup saved. Keep the file somewhere safe, like your Documents folder or cloud drive.", true);
+  render();
+}
+
+function rangeFor(kind, now) {
+  const m = mondayOf(now);
+  const plus = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  if (kind === "week") return [dayKey(m), dayKey(plus(m, 6))];
+  if (kind === "last-week") return [dayKey(plus(m, -7)), dayKey(plus(m, -1))];
+  if (kind === "month") return [dayKey(new Date(now.getFullYear(), now.getMonth(), 1)), dayKey(new Date(now.getFullYear(), now.getMonth() + 1, 0))];
+  if (kind === "last-month") return [dayKey(new Date(now.getFullYear(), now.getMonth() - 1, 1)), dayKey(new Date(now.getFullYear(), now.getMonth(), 0))];
+  return ["", ""];
+}
+
+function exportHtml(now) {
+  const [wf, wt] = rangeFor("week", now);
+  const last = meta && parseTs(meta.last_backup);
+  return `<div class="clear-panel export-panel">
+    <h3>Export sessions as CSV</h3>
+    <div class="opts">
+      <button class="pill" data-act="export-range" data-range="week">This week</button>
+      <button class="pill" data-act="export-range" data-range="last-week">Last week</button>
+      <button class="pill" data-act="export-range" data-range="month">This month</button>
+      <button class="pill" data-act="export-range" data-range="last-month">Last month</button>
+      <button class="pill" data-act="export-range" data-range="all">Everything</button>
+    </div>
+    <form class="opts range" data-form="export">
+      <label class="lbl" for="exp-from">From</label><input id="exp-from" type="date" value="${wf}">
+      <label class="lbl" for="exp-to">to</label><input id="exp-to" type="date" value="${wt}">
+      <button type="submit" class="pill strong">Export range</button>
+    </form>
+    <h3>Full backup</h3>
+    <p>One file with everything: tasks, every session and the full change log. Keep it
+    somewhere other than this page, such as your Documents folder or a cloud drive.
+    ${last ? `Last backup: ${esc(whenLabel(last, now))}.` : "You haven't made a full backup yet."}</p>
+    <div class="opts"><button class="pill strong" data-act="backup">Download full backup</button>
+      <button class="pill" data-act="cancel">Close</button></div>
+  </div>`;
+}
+
 // ---------------------------------------------------------------- banner, copy, Stream Deck commands
 
-function toast(text, color, isError) {
+function toast(text, color, isError, action) {
   const el = document.getElementById("toast");
-  el.innerHTML = `<span class="sw" style="background:${esc(color || "#8E8E93")}"></span><span>${esc(text)}</span>`;
+  toastAction = action || null;
+  el.innerHTML = `<span class="sw" style="background:${esc(color || "#8E8E93")}"></span><span>${esc(text)}</span>`
+    + (action ? `<button class="pill strong" data-act="toast-action">${esc(action.label)}</button>` : "");
   el.className = isError ? "show err" : "show";
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.className = ""; }, 8000);
+  toastTimer = setTimeout(() => { el.className = ""; toastAction = null; }, action ? 10000 : 8000);
+}
+
+function hideToast() {
+  clearTimeout(toastTimer);
+  document.getElementById("toast").className = "";
+  toastAction = null;
 }
 
 function copyLink(btn) {
@@ -1554,6 +2054,37 @@ window.addEventListener("hashchange", () => {
   runPendingCommand();
 });
 
+// ---------------------------------------------------------------- Stop at panel
+
+// Floats over the task area, outside anything the live updates redraw.
+function openStopAt() {
+  const now = new Date();
+  S = buildState(now);
+  const run = runningInfo(now);
+  if (!run || run.paused) return;
+  const box = document.getElementById("dialog");
+  box.innerHTML = `<form class="stop-at" data-form="stop-at">
+      <h3>When did you stop working on ${esc(labelOf(run.id))}?</h3>
+      <p class="q">The timer started ${esc(whenLabel(run.start, now))}. Time after the moment you pick won't be counted.</p>
+      <div class="row-line">
+        <input id="stop-at-time" type="datetime-local" step="60" value="${esc(toInput(suggestStop(run, now)))}" aria-label="Stop time">
+        <button type="submit" class="pill strong">Stop at this time</button>
+        <button type="button" class="pill" data-act="stop-at-cancel">Cancel</button>
+      </div>
+      <span class="stop-err" role="alert"></span>
+    </form>`;
+  box.hidden = false;
+  stopAtOpen = true;
+  document.getElementById("stop-at-time").focus();
+}
+
+function closeStopAt() {
+  const box = document.getElementById("dialog");
+  box.hidden = true;
+  box.innerHTML = "";
+  stopAtOpen = false;
+}
+
 // ---------------------------------------------------------------- events
 
 function openSessions(editId) {
@@ -1569,7 +2100,7 @@ function openSessions(editId) {
 
 function closeEditors() {
   sessEdit = sessConfirm = clearArmed = sessMove = null;
-  clearMode = linksMode = false;
+  clearMode = linksMode = exportMode = false;
   sessError = "";
 }
 
@@ -1580,6 +2111,12 @@ document.addEventListener("click", e => {
   const btn = e.target.closest("[data-act]");
   if (btn) {
     const a = btn.dataset.act, sid = btn.dataset.sid;
+    if (a === "toast-action") {
+      const action = toastAction;
+      hideToast();
+      if (action) action.fn();
+      return;
+    }
     if (a === "pause") { pauseTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
     if (a === "resume") { resumeTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
     if (a === "drop-stretch") {
@@ -1600,8 +2137,22 @@ document.addEventListener("click", e => {
       });
       return;
     }
+    if (a === "stop-at") { openStopAt(); return; }
+    if (a === "stop-at-cancel") { closeStopAt(); return; }
+    if (a === "open-export") { openSessions(); exportMode = true; redrawSessions(); return; }
     if (a === "stop") { stopTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
     if (a === "sessions") { openSessions(); return; }
+    if (a === "weeks") { view = "weeks"; weekOffset = 0; adding = null; sessError = ""; render(); return; }
+    if (a === "history") {
+      view = "history"; adding = null; sessError = ""; history = null; render();
+      if (db) loadHistory().then(() => view === "history" && render());
+      return;
+    }
+    if (a === "to-tasks") { view = "tasks"; sessError = ""; render(); return; }
+    if (a === "week-prev") { weekOffset--; render(); return; }
+    if (a === "week-next") { weekOffset = Math.min(0, weekOffset + 1); render(); return; }
+    if (a === "week-this") { weekOffset = 0; render(); return; }
+    if (a === "week-export") { exportCsv(btn.dataset.from, btn.dataset.to); return; }
     if (a === "tasklist") { view = "tasklist"; adding = null; completing = null; sessError = ""; redrawTaskList(); return; }
     if (view === "tasklist") {
       const id = btn.dataset.task;
@@ -1628,12 +2179,30 @@ document.addEventListener("click", e => {
       else if (a === "edit") { closeEditors(); sessEdit = sid; redrawSessions(); }
       else if (a === "del") { closeEditors(); sessConfirm = sid; redrawSessions(); }
       else if (a === "cancel") { closeEditors(); redrawSessions(); }
-      else if (a === "del-yes") deleteSession(sid).then(ok => ok && after());
-      else if (a === "discard-yes") discardRunning().then(ok => ok && after());
+      else if (a === "del-yes") deleteSession(sid).then(ok => {
+        if (!ok) return;
+        after();
+        const item = lastRemoved;
+        if (item) toast(`Deleted ${labelOf(item.session.project)} session`, colorOf(item.session.project), false, {
+          label: "Undo",
+          fn: () => undoDelete(item).then(done => { if (done) { redrawSessions(); toast("Session restored", colorOf(item.session.project)); } }),
+        });
+      });
+      else if (a === "discard-yes") discardRunning().then(ok => {
+        if (!ok) return;
+        after();
+        const timer = lastDiscarded;
+        if (timer) toast(`Discarded the ${labelOf(timer.project)} timer`, colorOf(timer.project), false, {
+          label: "Undo",
+          fn: () => undoDiscard(timer).then(done => { if (done) { redrawSessions(); toast("Timer restored", colorOf(timer.project)); } }),
+        });
+      });
       else if (a === "clear") { closeEditors(); clearMode = true; redrawSessions(); }
       else if (a === "clear-arm") { clearArmed = btn.dataset.scope; redrawSessions(); }
       else if (a === "clear-yes") clearSessions(btn.dataset.scope).then(ok => ok && after());
-      else if (a === "export") exportCsv();
+      else if (a === "export") { closeEditors(); exportMode = true; redrawSessions(); }
+      else if (a === "export-range") { const [f, t] = rangeFor(btn.dataset.range, new Date()); exportCsv(f, t); }
+      else if (a === "backup") fullBackup();
       else if (a === "move") { closeEditors(); sessMove = sid; redrawSessions(); }
       else if (a === "move-to") {
         const task = btn.dataset.task;
@@ -1672,9 +2241,15 @@ document.addEventListener("click", e => {
 });
 
 document.addEventListener("change", e => {
-  const due = e.target.closest("input[data-due]");
-  if (!due) return;
-  updateTask(due.dataset.due, {due: due.value || null}).then(ok => { if (ok) redrawTaskList(); });
+  const t = e.target;
+  let job = null;
+  if (t.dataset.due) job = updateTask(t.dataset.due, {due: t.value || null});
+  else if (t.dataset.label) job = updateTask(t.dataset.label, {label: t.value});
+  else if (t.dataset.color) job = updateTask(t.dataset.color, {color: t.value});
+  else if (t.dataset.group) job = updateTask(t.dataset.group, {group: t.value});
+  else if (t.dataset.goal) job = updateGroup(t.dataset.goal, Number(t.value));
+  if (!job) return;
+  job.then(ok => { if (ok) { redrawTaskList(); showSessError("Saved", true); } else redrawTaskList(); });
 });
 
 document.addEventListener("input", e => {
@@ -1683,6 +2258,7 @@ document.addEventListener("input", e => {
 
 document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
+  if (stopAtOpen) { closeStopAt(); return; }
   if (view === "sessions" && sessEditing()) { closeEditors(); redrawSessions(); }
   else if (view === "tasklist" && completing) { completing = null; redrawTaskList(); }
   else if (adding) { adding = null; render(); }
@@ -1690,6 +2266,25 @@ document.addEventListener("keydown", e => {
 
 document.addEventListener("submit", async e => {
   e.preventDefault();
+  const kind = e.target.dataset && e.target.dataset.form;
+  if (kind === "stop-at") {
+    const value = document.getElementById("stop-at-time").value;
+    const ok = await stopAt(value);   // the panel stays open until this succeeds
+    if (!ok) {
+      const err = document.querySelector(".stop-at .stop-err");
+      if (err) err.textContent = view === "tasks" ? actionError : sessError;
+      actionError = "";
+      return;
+    }
+    closeStopAt();
+    if (view === "sessions") redrawSessions(); else render();
+    toast(`Stopped at ${clock(parseTs(value))}`);
+    return;
+  }
+  if (kind === "export") {
+    exportCsv(document.getElementById("exp-from").value, document.getElementById("exp-to").value);
+    return;
+  }
   const editor = e.target.closest(".editor");
   if (editor) {
     const kind = editor.dataset.kind;
@@ -1754,6 +2349,10 @@ pendingCmd = commandFromLoad();
     runningLoaded = true;
     render();
     runPendingCommand();
+  }, fail);
+  db.doc("setup/meta").onSnapshot(snap => {
+    meta = snap.exists ? snap.data() : {};
+    render();
   }, fail);
   db.collection("weeks").onSnapshot(q => {
     const next = {};
