@@ -289,7 +289,7 @@ function suggestStop(run, now) {
 function backupDue(now) {
   if (!S.sessions.length) return "";
   const last = meta && parseTs(meta.last_backup);
-  if (!last) return "No backup yet · Back up";
+  if (!last) return "No backup yet · Back up now";
   const days = Math.floor((now - last) / 86400000);
   return days >= 7 ? `Backup ${days} days old · Back up` : "";
 }
@@ -383,7 +383,7 @@ function renderGroups(now, run) {
       else if (diff < 0) pace = `<div class="grp-pace behind">${hm(-diff)} behind pace</div>`;
       else pace = `<div class="grp-pace">${hm(diff)} ahead of pace</div>`;
     }
-    const target = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h</span>` : "";
+    const target = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h goal ·</span>` : "";
 
     let tasks = "";
     for (const p of S.config.active.filter(p => p.group === g.id)) {
@@ -740,8 +740,8 @@ function renderWeeks(now, run) {
     const ids = tasks.map(p => p.id).concat(unknown);
     const sum = ids.reduce((x, id) => x + (t.byTask[id] || 0), 0);
     if (!sum && g.id === "_other") continue;
-    const goal = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h</span>` : "";
-    const met = g.weekly_target_hours > 0 ? (sum >= g.weekly_target_hours * 3600 ? `<span class="tag ok">goal met</span>` : `<span class="q">${hm(g.weekly_target_hours * 3600 - sum)} short</span>`) : "";
+    const goal = g.weekly_target_hours > 0 ? ` <span class="of">of ${g.weekly_target_hours}h goal ·</span>` : "";
+    const met = g.weekly_target_hours > 0 ? (sum >= g.weekly_target_hours * 3600 ? `<span class="tag ok">goal met</span>` : `<span class="q">${hm(g.weekly_target_hours * 3600 - sum)} to go</span>`) : "";
     groups += `<div class="day-h"><span>${esc(g.label)}</span><span><b class="wk-sum">${hm(sum)}</b>${goal} ${weekOffset < 0 || sum >= g.weekly_target_hours * 3600 ? met : ""}</span></div>`;
     for (const id of ids.sort((a, b) => t.byTask[b] - t.byTask[a])) {
       groups += `<div class="row wk-row">
