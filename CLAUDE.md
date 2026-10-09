@@ -22,4 +22,9 @@ Long chats are expensive: every reply re-reads the whole history. So, in every s
     extracting values (it misreads them).
   - Helper agents (the Agent tool) default to Sonnet unless the task is Opus-level.
 - **Bundle work.** Several changes, one test run, one pull request, one publish.
+- **One pull request per session (Kristen, 2026-10-09).** Every push to a pull request runs the tests on GitHub,
+  and those minutes are limited. Open at most one pull request per repo per session, carrying everything the task
+  changed, including its notes; small follow-ups join the open one or wait for the next session's. Push when the task
+  is done and local checks pass, not after every commit. Fixes for a failing check or a review comment go on the open
+  pull request. (Full rule: `RULES.md` in `kristenmedo/claude-shared`.)
 - **Keep output short.** Read only the part of a file you need, and don't print whole logs.
