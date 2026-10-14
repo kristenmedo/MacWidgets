@@ -1,6 +1,6 @@
 ---
 name: alwaysallow
-description: Add a permanent allow rule for one command so Claude stops asking about it. Usage: /alwaysallow <command>
+description: Add a permanent allow rule for one command so Claude stops asking about it. Run as /alwaysallow followed by the command.
 disable-model-invocation: true
 ---
 
