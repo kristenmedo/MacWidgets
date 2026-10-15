@@ -1,8 +1,9 @@
 ---
 name: archive
-description: Check whether the current work is safe to archive, and archive this session automatically if every check is clear. Run as /archive.
-disable-model-invocation: true
+description: Check whether the current work is safe to archive, and archive this session automatically if every check is clear. Run as /archive. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /archive myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Check whether this session is safe to archive. If every check is clear, archive it right away. Do not ask me first; typing /archive is my go.
 

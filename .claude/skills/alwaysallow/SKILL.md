@@ -1,8 +1,9 @@
 ---
 name: alwaysallow
-description: Add a permanent allow rule for one command so Claude stops asking about it. Run as /alwaysallow followed by the command.
-disable-model-invocation: true
+description: Add a permanent allow rule for one command so Claude stops asking about it. Run as /alwaysallow followed by the command. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /alwaysallow myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Make one command permanently allowed. The command is: $ARGUMENTS
 
