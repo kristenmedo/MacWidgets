@@ -1,8 +1,9 @@
 ---
 name: handoff
-description: Write a handoff prompt and start a new session that continues this session's work. Run as /handoff, optionally followed by a note or the word wait.
-disable-model-invocation: true
+description: Write a handoff prompt and start a new session that continues this session's work. Run as /handoff, optionally followed by a note or the word wait. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /handoff myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Hand this session's work to a new session that picks it up. Extra note from me: $ARGUMENTS
 

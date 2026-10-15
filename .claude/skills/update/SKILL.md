@@ -1,8 +1,9 @@
 ---
 name: update
-description: Review current sessions and completed work, then recommend what the next session should work on. Read-only. Run as /update, optionally followed by a focus.
-disable-model-invocation: true
+description: Review current sessions and completed work, then recommend what the next session should work on. Read-only. Run as /update, optionally followed by a focus. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /update myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Look at the current state of work and recommend what the next session should do. This is read-only. Do not start a session, change files, merge or open anything. Optional focus from me: $ARGUMENTS
 

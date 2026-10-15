@@ -1,8 +1,9 @@
 ---
 name: coordinate
-description: Hand this session's remaining work to the Coordinator session, then archive this session only if nothing can be lost. Run as /coordinate, optionally followed by a note.
-disable-model-invocation: true
+description: Hand this session's remaining work to the Coordinator session, then archive this session only if nothing can be lost. Run as /coordinate, optionally followed by a note. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /coordinate myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Pass whatever this session has not finished to the Coordinator session, and archive this session only if no data can be lost. Extra note from me: $ARGUMENTS
 

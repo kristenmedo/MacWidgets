@@ -1,8 +1,9 @@
 ---
 name: wait
-description: Start the next session for the next task and have it wait for my go. Run as /wait, optionally followed by the task.
-disable-model-invocation: true
+description: Start the next session for the next task and have it wait for my go. Run as /wait, optionally followed by the task. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /wait myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Start the next session and have it wait for me to say "go". The next task is: $ARGUMENTS
 

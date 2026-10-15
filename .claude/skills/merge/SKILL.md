@@ -1,8 +1,9 @@
 ---
 name: merge
-description: Mark the current PR ready for review and enable auto-merge once required checks and approvals pass.
-disable-model-invocation: true
+description: Mark the current PR ready for review and enable auto-merge once required checks and approvals pass. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /merge myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Mark the current pull request ready for review and enable auto-merge, so it merges only when all required checks and approvals pass.
 

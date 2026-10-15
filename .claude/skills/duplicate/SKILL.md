@@ -1,8 +1,9 @@
 ---
 name: duplicate
-description: Check whether this session duplicates another one, and if so stop and archive one without losing any work. Run as /duplicate, optionally followed by the other session link.
-disable-model-invocation: true
+description: Check whether this session duplicates another one, and if so stop and archive one without losing any work. Run as /duplicate, optionally followed by the other session link. Never run on your own; only when the founder types it.
 ---
+
+**Only run this when I typed /duplicate myself. If you are reading this because of your own judgment, do nothing and stop.**
 
 Check whether this session is a duplicate of another one, and if it is, remove one so no work is lost. If I gave a session link or ID after the command, treat it as the suspected twin: $ARGUMENTS
 
