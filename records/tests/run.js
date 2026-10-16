@@ -64,6 +64,7 @@ const advance = (page, minutes) => page.evaluate(m => { window.__off += m * 6000
 const store = (page, prefix) => page.evaluate(p => Object.fromEntries([...window.__store.entries()].filter(([k]) => k.startsWith(p))), prefix);
 const sessions = async page => Object.values(await store(page, "weeks/")).flatMap(w => w.sessions);
 const changes = async page => Object.values(await store(page, "changes/")).flatMap(c => c.entries || []).map(e => e.action);
+const toLocal = s => s.slice(0, 16);
 const settle = page => page.waitForTimeout(250);
 const shot = async (page, name) => { if (shots) await page.screenshot({path: path.join(shots, name + ".png")}); };
 
@@ -240,6 +241,25 @@ const shot = async (page, name) => { if (shots) await page.screenshot({path: pat
     const lines = await p.$$eval(".hist-line", els => els.map(e => e.textContent));
     check("history says Archived and Restored", lines.some(l => /^Archived /.test(l)) && lines.includes("Restored") && lines.some(l => /^New round starts /.test(l)), lines);
     check("no page errors (archive)", !p.errors.length, p.errors);
+    await p.close();
+  }
+
+  // 6c. Change the start time of the running timer, right after tapping a key.
+  {
+    const p = await open(browser, {clock: day(0, 12, 0), docs: {"setup/config": CONFIG}});
+    await p.click('.task-btn[data-task="mds"]'); await settle(p);
+    await p.click("[data-act=start-at]"); await settle(p);
+    await p.fill("#start-at-time", toLocal(at(0, 9, 30))); await p.dispatchEvent("#start-at-time", "change");
+    await p.click(".stop-at [type=submit]"); await settle(p);
+    const run = (await store(p, "timer/"))["timer/running"];
+    check("start time moved earlier", run && run.project === "mds" && run.start.startsWith(at(0, 9, 30).slice(0, 16)), run);
+    check("panel shows the earlier start", /9:30 am/.test(await p.textContent("#now")), await p.textContent("#now"));
+    await p.click("[data-act=start-at]"); await settle(p);
+    await p.fill("#start-at-time", toLocal(at(1, 9, 0))); await p.click(".stop-at [type=submit]"); await settle(p);
+    check("future start refused", /future/.test(await p.textContent(".stop-err")), await p.textContent(".stop-err"));
+    await p.click("[data-act=stop-at-cancel]");
+    check("change is in the change log", (await changes(p)).includes("edit-running"));
+    check("no page errors (start-at)", !p.errors.length, p.errors);
     await p.close();
   }
 

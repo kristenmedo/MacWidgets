@@ -339,7 +339,7 @@ function renderNow(now, run) {
           : `<button class="ctrl" data-act="pause">❚❚ Pause</button>`}
         <button class="ctrl" data-act="stop">■ Stop</button>
       </div>
-      ${run.paused ? "" : `<button class="linkish${forgotten(run, now) ? " urgent" : ""}" data-act="stop-at">Stop at an earlier time…</button>`}`;
+      ${run.paused ? "" : `<div class="link-row2"><button class="linkish" data-act="start-at">Change start…</button><button class="linkish${forgotten(run, now) ? " urgent" : ""}" data-act="stop-at">Stop earlier…</button></div>`}`;
   } else {
     html = `<div class="task">Not tracking</div>
       <div class="group">Tap a task to start</div>`;
@@ -1780,6 +1780,28 @@ function openStopAt() {
   document.getElementById("stop-at-time").focus();
 }
 
+// For a task started late in the tapping: moves the running timer's start earlier.
+function openStartAt() {
+  const now = new Date();
+  S = buildState(now);
+  const run = runningInfo(now);
+  if (!run || run.paused) return;
+  const box = document.getElementById("dialog");
+  box.innerHTML = `<form class="stop-at" data-form="start-at">
+      <h3>When did you start ${esc(labelOf(run.id))}?</h3>
+      <p class="q">The timer began ${esc(whenLabel(run.start, now))}. Time from the moment you pick onward will be counted.</p>
+      <div class="row-line">
+        <input id="start-at-time" type="datetime-local" step="60" value="${esc(toInput(run.start))}" aria-label="Start time">
+        <button type="submit" class="pill strong">Change start time</button>
+        <button type="button" class="pill" data-act="stop-at-cancel">Cancel</button>
+      </div>
+      <span class="stop-err" role="alert"></span>
+    </form>`;
+  box.hidden = false;
+  stopAtOpen = true;
+  document.getElementById("start-at-time").focus();
+}
+
 function closeStopAt() {
   const box = document.getElementById("dialog");
   box.hidden = true;
@@ -1840,6 +1862,7 @@ document.addEventListener("click", e => {
       return;
     }
     if (a === "stop-at") { openStopAt(); return; }
+    if (a === "start-at") { openStartAt(); return; }
     if (a === "stop-at-cancel") { closeStopAt(); return; }
     if (a === "open-export") { openSessions(); exportMode = true; redrawSessions(); return; }
     if (a === "stop") { stopTimer().then(ok => ok && view === "sessions" && redrawSessions()); return; }
@@ -1993,6 +2016,21 @@ document.addEventListener("keydown", e => {
 document.addEventListener("submit", async e => {
   e.preventDefault();
   const kind = e.target.dataset && e.target.dataset.form;
+  if (kind === "start-at") {
+    const value = document.getElementById("start-at-time").value;
+    const r = S && S.running;
+    const ok = r ? await updateRunning({project: r.project, start: value}) : false;
+    if (!ok) {
+      const err = document.querySelector(".stop-at .stop-err");
+      if (err) err.textContent = (view === "tasks" ? actionError : sessError) || "Pick the time you started";
+      actionError = "";
+      return;
+    }
+    closeStopAt();
+    if (view === "sessions") redrawSessions(); else render();
+    toast(`Start time changed to ${clock(parseTs(value))}`);
+    return;
+  }
   if (kind === "stop-at") {
     const value = document.getElementById("stop-at-time").value;
     const ok = await stopAt(value);   // the panel stays open until this succeeds

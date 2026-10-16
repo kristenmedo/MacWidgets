@@ -12,6 +12,8 @@ records from a conversation. Using the page doesn't use any Claude usage.
 
 - **Start:** tap a task key. **Pause** and **Resume** keep one session, adding a
   stretch of work each time. **Stop** ends it.
+- **Change start…** (under the running timer) moves the start earlier when you
+  forgot to tap the task on time. It's logged in History.
 - **Stop at an earlier time…** ends a timer you forgot, at the time you pick.
   The timer panel warns you when one has been running since an earlier day, for
   three hours, or an hour past the end of your working day.
