@@ -388,6 +388,7 @@ let sessError = "";
 let sessMove = null;        // session id (or "running") whose Move picker is open
 let linksMode = false;      // Stream Deck links panel
 let dueOpen = null;         // task id whose empty due-date box is open (Tasks view)
+let restoring = null;       // archived task id whose "start date" box is open (Tasks view)
 let completing = null;      // task id whose "Complete" date box is open (Tasks view)
 let runningLoaded = false;
 let toastTimer = null;
@@ -516,6 +517,7 @@ function buildState(now) {
       group: ids.has(t.group) ? t.group : "_other",
       due: typeof t.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.due) ? t.due : "",
       completed: typeof t.completed === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.completed) ? t.completed : "",
+      started: typeof t.started === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.started) ? t.started : "",
       archived: typeof t.archived === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.archived) ? t.archived : "",
     }));
   // Completed and archived tasks stay known (for names and colours in history) but leave the keys.
@@ -1199,6 +1201,7 @@ function describeChange(e) {
         if ((b.due || "") !== (a.due || "")) lines.push(a.due ? `Due ${shortDate(a.due)}` : "Due date removed");
         if ((b.completed || "") !== (a.completed || "")) lines.push(a.completed ? `Completed ${shortDate(a.completed)}` : "Reopened");
         if ((b.archived || "") !== (a.archived || "")) lines.push(a.archived ? `Archived ${shortDate(a.archived)}` : "Restored");
+        if ((b.started || "") !== (a.started || "") && a.started) lines.push(`New round starts ${shortDate(a.started)}`);
         if (b.color !== a.color) lines.push("Colour changed");
         if (b.group !== a.group) lines.push(`Moved to ${(S.config.groups.find(g => g.id === a.group) || {}).label || a.group}`);
       }
@@ -1277,7 +1280,7 @@ function renderTaskList(now, run) {
           <input id="label-${k}" data-label="${k}" value="${esc(p.label)}" maxlength="60" aria-label="Task name">
           <select id="group-${k}" data-group="${k}" aria-label="Group for ${esc(p.label)}">${groupOpts}</select>
         </span>
-        <span class="r-note">${hm(taskHours(p.id))} logged</span>
+        <span class="r-note">${hm(taskHours(p.id))} logged${p.started ? ` · started ${esc(shortDate(p.started))}` : ""}</span>
         ${p.due || dueOpen === p.id
           ? `<span class="r-due"><span class="lbl">Due</span><input type="date" id="due-${k}" data-due="${k}" value="${esc(p.due)}" aria-label="Due date for ${esc(p.label)}">
              ${p.due ? `<button class="x-stretch" data-act="clear-due" data-task="${k}" aria-label="Remove due date for ${esc(p.label)}" title="Remove due date">✕</button>` : ""}</span>`
@@ -1297,7 +1300,10 @@ function renderTaskList(now, run) {
         <span class="r-task">${esc(p.label)}<span class="r-grp">${esc(groupLabel(p.id))}</span></span>
         <span class="r-note">${hm(taskHours(p.id))} logged</span>
         <span class="r-due">archived ${esc(shortDate(p.archived))}${p.due ? ` · due ${esc(shortDate(p.due))}` : ""}</span>
-        <span class="r-btns"><button class="pill" data-act="restore" data-task="${esc(p.id)}">Restore</button></span>
+        <span class="r-btns">${restoring === p.id
+          ? `<span class="q">New round starts</span><input type="date" id="start-${esc(p.id)}" value="${esc(todayKey())}" aria-label="Start date for the new round">
+             <button class="pill strong" data-act="restore-yes" data-task="${esc(p.id)}">Restore</button><button class="pill" data-act="restore-no">Cancel</button>`
+          : `<button class="pill" data-act="restore" data-task="${esc(p.id)}">Restore</button>`}</span>
       </div>`;
     }
   }
@@ -2206,10 +2212,10 @@ document.addEventListener("click", e => {
     if (a === "week-next") { weekOffset = Math.min(0, weekOffset + 1); render(); return; }
     if (a === "week-this") { weekOffset = 0; render(); return; }
     if (a === "week-export") { exportCsv(btn.dataset.from, btn.dataset.to); return; }
-    if (a === "tasklist") { view = "tasklist"; adding = null; completing = null; dueOpen = null; sessError = ""; redrawTaskList(); return; }
+    if (a === "tasklist") { view = "tasklist"; adding = null; completing = null; restoring = null; dueOpen = null; sessError = ""; redrawTaskList(); return; }
     if (view === "tasklist") {
       const id = btn.dataset.task;
-      if (a === "tasks-done") { view = "tasks"; completing = null; render(); }
+      if (a === "tasks-done") { view = "tasks"; completing = null; restoring = null; render(); }
       else if (a === "complete") { completing = id; redrawTaskList(); }
       else if (a === "set-due") {
         dueOpen = id; redrawTaskList();
@@ -2234,7 +2240,17 @@ document.addEventListener("click", e => {
         redrawTaskList();
         toast(`Archived ${labelOf(id)}`, colorOf(id));
       });
-      else if (a === "restore") updateTask(id, {archived: null}).then(ok => ok && redrawTaskList());
+      else if (a === "restore") { restoring = id; redrawTaskList(); }
+      else if (a === "restore-no") { restoring = null; redrawTaskList(); }
+      else if (a === "restore-yes") {
+        const date = (document.getElementById("start-" + id) || {}).value || todayKey();
+        updateTask(id, {archived: null, started: date}).then(ok => {
+          if (!ok) return;
+          restoring = null;
+          redrawTaskList();
+          toast(`Restored ${labelOf(id)}, starting ${shortDate(date)}`, colorOf(id));
+        });
+      }
       else if (a === "reopen") updateTask(id, {completed: null}).then(ok => ok && redrawTaskList());
       return;
     }
@@ -2327,7 +2343,7 @@ document.addEventListener("keydown", e => {
   if (e.key !== "Escape") return;
   if (stopAtOpen) { closeStopAt(); return; }
   if (view === "sessions" && sessEditing()) { closeEditors(); redrawSessions(); }
-  else if (view === "tasklist" && (completing || dueOpen)) { completing = null; dueOpen = null; redrawTaskList(); }
+  else if (view === "tasklist" && (completing || restoring || dueOpen)) { completing = null; restoring = null; dueOpen = null; redrawTaskList(); }
   else if (adding) { adding = null; render(); }
 });
 

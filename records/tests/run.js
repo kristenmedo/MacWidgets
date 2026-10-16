@@ -228,13 +228,17 @@ const shot = async (page, name) => { if (shots) await page.screenshot({path: pat
     await p.click("[data-act=done]").catch(() => {}); await settle(p);
     await p.click("[data-act=tasklist]"); await settle(p);
     await p.click('[data-act=restore][data-task="mds"]'); await settle(p);
+    check("restore asks for a start date first", !!(await p.$("#start-mds")) && !!(await store(p, "setup/"))["setup/config"].tasks.find(t => t.id === "mds").archived);
+    await p.fill("#start-mds", at(7, 0, 0).slice(0, 10)); await p.dispatchEvent("#start-mds", "change");
+    await p.click('[data-act=restore-yes][data-task="mds"]'); await settle(p);
     cfg = (await store(p, "setup/"))["setup/config"];
-    check("restore clears archived", !("archived" in cfg.tasks.find(t => t.id === "mds")), cfg.tasks);
+    check("restore clears archived and saves the start date", !("archived" in cfg.tasks.find(t => t.id === "mds")) && cfg.tasks.find(t => t.id === "mds").started === at(7, 0, 0).slice(0, 10), cfg.tasks);
+    check("task row shows when the round started", /started/.test(await p.textContent(".sess-list")));
     await p.click("[data-act=tasks-done]"); await settle(p);
     check("restored task's key is back", !!(await p.$('.task-btn[data-task="mds"]')));
     await p.click("[data-act=history]"); await settle(p);
     const lines = await p.$$eval(".hist-line", els => els.map(e => e.textContent));
-    check("history says Archived and Restored", lines.some(l => /^Archived /.test(l)) && lines.includes("Restored"), lines);
+    check("history says Archived and Restored", lines.some(l => /^Archived /.test(l)) && lines.includes("Restored") && lines.some(l => /^New round starts /.test(l)), lines);
     check("no page errors (archive)", !p.errors.length, p.errors);
     await p.close();
   }

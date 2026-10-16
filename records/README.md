@@ -23,8 +23,8 @@ records from a conversation. Using the page doesn't use any Claude usage.
 - **Tasks:** rename, recolour, move between groups, set due dates, complete or
   reopen tasks, and change each group's weekly goal.
   **Archive** takes a task off the keys without finishing it (for work that
-  comes back in rounds); its sessions stay under it, and **Restore** brings it
-  back. A running timer on a task you archive keeps going.
+  comes back in rounds); its sessions stay under it. **Restore** asks when the
+  new round starts and brings the task back with that start date. A running timer on a task you archive keeps going.
 - **Weeks:** totals by day, group and task for this or any past week, with an
   export of that week.
 - **History:** every change to recorded time (edits, deletions, sessions added
@@ -52,7 +52,7 @@ NODE_PATH=$(npm root -g) node records/tests/run.js [screenshot-folder]
 
 | Path | Holds |
 |---|---|
-| `setup/config` | groups and weekly goals, tasks (name, colour, group, due, completed, archived), working day |
+| `setup/config` | groups and weekly goals, tasks (name, colour, group, due, completed, archived, started), working day |
 | `setup/meta` | date of the last full backup |
 | `timer/running` | the running or paused timer, and the session it belongs to |
 | `weeks/<monday>` | that week's sessions; each has `start`, `end` and optional `stretches`, `note`, `source`, `edited` |
