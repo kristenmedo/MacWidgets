@@ -203,6 +203,41 @@ const shot = async (page, name) => { if (shots) await page.screenshot({path: pat
     await p.close();
   }
 
+  // 6b. Archive and Restore: separate from Complete; the timer and sessions are untouched.
+  {
+    const p = await open(browser, {clock: day(0, 12, 0), docs: {"setup/config": CONFIG,
+      [`weeks/${thisWeek}`]: {week: thisWeek, sessions: [{id: "a1", project: "meet", start: at(0, 9, 0), end: at(0, 10, 0)}]}}});
+    await p.click('.task-btn[data-task="mds"]'); await settle(p);
+    await p.click("[data-act=tasklist]"); await settle(p);
+    await p.click('[data-act=archive][data-task="mds"]'); await settle(p);
+    let cfg = (await store(p, "setup/"))["setup/config"];
+    const mds = cfg.tasks.find(t => t.id === "mds");
+    check("archive stores today's date and not completed", mds.archived === at(0, 0, 0).slice(0, 10) && !mds.completed, mds);
+    check("archived section lists the task with a Restore button", /Archived/.test(await p.textContent(".sess-list")) && !!(await p.$('[data-act=restore][data-task="mds"]')));
+    check("archive leaves the timer running", (await store(p, "timer/"))["timer/running"].project === "mds");
+    await shot(p, "tasks-archived");
+    await p.click("[data-act=tasks-done]"); await settle(p);
+    check("archived task's key is hidden", !(await p.$('.task-btn[data-task="mds"]')) && !!(await p.$('.task-btn[data-task="meet"]')));
+    await p.click("[data-act=sessions]"); await settle(p);
+    check("sessions still show the archived task's name", /MDS Audit/.test(await p.textContent(".sess-list")));
+    await p.click('[data-act=move][data-sid="a1"]'); await settle(p);
+    const opts = await p.$$eval(".mv-group button", os => os.map(o => o.textContent.trim()));
+    check("Move picker leaves out the archived task", opts.some(o => /DES Registry/.test(o)) && !opts.some(o => /MDS Audit/.test(o)), opts);
+    await p.click("[data-act=cancel]").catch(() => {}); await settle(p);
+    await p.click("[data-act=done]").catch(() => {}); await settle(p);
+    await p.click("[data-act=tasklist]"); await settle(p);
+    await p.click('[data-act=restore][data-task="mds"]'); await settle(p);
+    cfg = (await store(p, "setup/"))["setup/config"];
+    check("restore clears archived", !("archived" in cfg.tasks.find(t => t.id === "mds")), cfg.tasks);
+    await p.click("[data-act=tasks-done]"); await settle(p);
+    check("restored task's key is back", !!(await p.$('.task-btn[data-task="mds"]')));
+    await p.click("[data-act=history]"); await settle(p);
+    const lines = await p.$$eval(".hist-line", els => els.map(e => e.textContent));
+    check("history says Archived and Restored", lines.some(l => /^Archived /.test(l)) && lines.includes("Restored"), lines);
+    check("no page errors (archive)", !p.errors.length, p.errors);
+    await p.close();
+  }
+
   // 7. Export ranges, full backup and its reminder.
   {
     const p = await open(browser, {clock: day(0, 12, 0), docs: {"setup/config": CONFIG,

@@ -158,9 +158,10 @@ function buildState(now) {
       group: ids.has(t.group) ? t.group : "_other",
       due: typeof t.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.due) ? t.due : "",
       completed: typeof t.completed === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.completed) ? t.completed : "",
+      archived: typeof t.archived === "string" && /^\d{4}-\d{2}-\d{2}$/.test(t.archived) ? t.archived : "",
     }));
-  // Completed tasks stay known (for names and colours in history) but leave the keys.
-  const active = projects.filter(p => !p.completed);
+  // Completed and archived tasks stay known (for names and colours in history) but leave the keys.
+  const active = projects.filter(p => !p.completed && !p.archived);
   const projectGroup = {};
   for (const p of projects) projectGroup[p.id] = p.group;
 
@@ -328,7 +329,7 @@ function renderNow(now, run) {
       <div class="group">Tap a task to start</div>`;
     const last = S.sessions[0];
     const lastTask = last && projectMap()[last.project];
-    if (last && lastTask && !lastTask.completed && dayKey(parseTs(last.end)) === dayKey(now)) {
+    if (last && lastTask && !lastTask.completed && !lastTask.archived && dayKey(parseTs(last.end)) === dayKey(now)) {
       html += `<div class="ctrl-btns"><button class="ctrl cont" data-act="continue" data-sid="${esc(last.id)}" style="--c:${esc(colorOf(last.project))}">▶ Resume ${esc(lastTask.label)}</button></div>`;
     }
   }
@@ -495,7 +496,7 @@ function taskOptions(selected) {
   let html = "";
   if (selected && !projectMap()[selected]) html += `<option value="${esc(selected)}" selected>${esc(selected)} (not in setup)</option>`;
   for (const g of S.config.groups) {
-    const items = S.config.projects.filter(p => p.group === g.id && (!p.completed || p.id === selected));
+    const items = S.config.projects.filter(p => p.group === g.id && ((!p.completed && !p.archived) || p.id === selected));
     if (!items.length) continue;
     html += `<optgroup label="${esc(g.label)}">`;
     for (const p of items) html += `<option value="${esc(p.id)}"${p.id === selected ? " selected" : ""}>${esc(p.label)}</option>`;
@@ -824,6 +825,7 @@ function describeChange(e) {
         if (b.label !== a.label) lines.push(`Renamed from “${b.label}” to “${a.label}”`);
         if ((b.due || "") !== (a.due || "")) lines.push(a.due ? `Due ${shortDate(a.due)}` : "Due date removed");
         if ((b.completed || "") !== (a.completed || "")) lines.push(a.completed ? `Completed ${shortDate(a.completed)}` : "Reopened");
+        if ((b.archived || "") !== (a.archived || "")) lines.push(a.archived ? `Archived ${shortDate(a.archived)}` : "Restored");
         if (b.color !== a.color) lines.push("Colour changed");
         if (b.group !== a.group) lines.push(`Moved to ${(S.config.groups.find(g => g.id === a.group) || {}).label || a.group}`);
       }
@@ -904,12 +906,25 @@ function renderTaskList(now, run) {
         </span>
         <span class="r-note">${hm(taskHours(p.id))} logged</span>
         <label class="r-due"><span class="lbl">Due</span><input type="date" id="due-${k}" data-due="${k}" value="${esc(p.due)}" aria-label="Due date for ${esc(p.label)}"></label>
-        <span class="r-btns">${done}</span>
+        <span class="r-btns">${done}<button class="pill" data-act="archive" data-task="${k}">Archive</button></span>
       </div>`;
     }
   }
   if (!S.config.active.length) body += `<div class="empty">No open tasks. Add one with + Add task on the main screen.</div>`;
   body += `<p class="q tasks-help">Change a name, colour, group or goal and it saves when you leave the field.</p>`;
+  const shelved = S.config.projects.filter(p => p.archived && !p.completed).sort((a, b) => (a.archived < b.archived ? 1 : -1));
+  if (shelved.length) {
+    body += `<div class="day-h"><span>Archived</span><span>${shelved.length}</span></div>`;
+    for (const p of shelved) {
+      body += `<div class="row task-row done">
+        <span class="sw" style="background:${esc(p.color || "#8E8E93")}"></span>
+        <span class="r-task">${esc(p.label)}<span class="r-grp">${esc(groupLabel(p.id))}</span></span>
+        <span class="r-note">${hm(taskHours(p.id))} logged</span>
+        <span class="r-due">archived ${esc(shortDate(p.archived))}${p.due ? ` · due ${esc(shortDate(p.due))}` : ""}</span>
+        <span class="r-btns"><button class="pill" data-act="restore" data-task="${esc(p.id)}">Restore</button></span>
+      </div>`;
+    }
+  }
   const finished = S.config.projects.filter(p => p.completed).sort((a, b) => (a.completed < b.completed ? 1 : -1));
   if (finished.length) {
     body += `<div class="day-h"><span>Completed</span><span>${finished.length}</span></div>`;
@@ -1265,7 +1280,7 @@ function addTask(groupId, label, due) {
   }));
 }
 
-// Changes one task's due or completed date. null removes the field.
+// Changes one task's due, completed or archived date. null removes the field.
 function updateTask(id, patch) {
   return act(() => withLock("config", async () => {
     const ref = db.doc("setup/config");
@@ -1705,6 +1720,7 @@ function runPendingCommand() {
   const p = projectMap()[id];
   if (!p) { toast(`Stream Deck key points to a task that doesn't exist ("${id}"). Nothing changed.`, null, true); return; }
   const where = groupLabel(id);
+  if (p.archived && !p.completed) { toast(`Stream Deck: ${p.label} is archived. Restore it under Tasks to track it again.`, p.color, true); return; }
   if (p.completed) { toast(`Stream Deck: ${p.label} is marked complete. Reopen it under Tasks to track it again.`, p.color, true); return; }
   if (running && running.project === id && !running.paused) { toast(`Stream Deck: ${p.label} is already running`, p.color); return; }
   startTask(id).then(ok => ok && toast(`Stream Deck: started ${p.label}${where ? " · " + where : ""}`, p.color));
@@ -1829,6 +1845,12 @@ document.addEventListener("click", e => {
           toast(`Completed ${labelOf(id)}`, colorOf(id));
         });
       }
+      else if (a === "archive") updateTask(id, {archived: todayKey()}).then(ok => {
+        if (!ok) return;
+        redrawTaskList();
+        toast(`Archived ${labelOf(id)}`, colorOf(id));
+      });
+      else if (a === "restore") updateTask(id, {archived: null}).then(ok => ok && redrawTaskList());
       else if (a === "reopen") updateTask(id, {completed: null}).then(ok => ok && redrawTaskList());
       return;
     }
