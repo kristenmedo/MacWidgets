@@ -43,6 +43,7 @@ const day = (offset, h = 0, m = 0, s = 0) => { const n = new Date(); return new 
 const at = (offset, h, m, s = 0) => fmt(day(offset, h, m, s));
 const monday = d => { const x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); return new Date(x.getFullYear(), x.getMonth(), x.getDate() - ((x.getDay() + 6) % 7)); };
 const dayKeyOf = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+const sunday = d => new Date(d.getFullYear(), d.getMonth(), d.getDate() - d.getDay());
 const weekKey = d => { const m = monday(d); return `${m.getFullYear()}-${pad(m.getMonth() + 1)}-${pad(m.getDate())}`; };
 
 async function open(browser, {clock, docs = {}, width = 2560, height = 720} = {}) {
@@ -157,9 +158,10 @@ const shot = async (page, name) => { if (shots) await page.screenshot({path: pat
     await p.close();
   }
 
-  // 5. Weeks view: per-day split across midnight, previous week.
+  // 5. Weeks view: per-day split across midnight, previous week (Sun–Sat).
   {
-    const lastMonday = new Date(monday(new Date()).getTime() - 7 * 86400000);
+    const s0 = sunday(new Date());
+    const lastMonday = new Date(s0.getFullYear(), s0.getMonth(), s0.getDate() - 6);
     const lastKey = weekKey(lastMonday);
     const lm = (d, h, m) => fmt(new Date(lastMonday.getFullYear(), lastMonday.getMonth(), lastMonday.getDate() + d, h, m));
     const p = await open(browser, {clock: day(0, 12, 0), docs: {
@@ -170,7 +172,7 @@ const shot = async (page, name) => { if (shots) await page.screenshot({path: pat
     await p.click("[data-act=weeks]"); await settle(p);
     await p.click("[data-act=week-prev]"); await settle(p);
     const days = await p.$$eval(".wk-day b", els => els.map(e => e.textContent));
-    check("week days split at midnight", days[0] === "3h 00m" && days[1] === "1h 00m" && days[2] === "1h 00m" && days[7] === "5h 00m", days);
+    check("week days split at midnight", days[1] === "3h 00m" && days[2] === "1h 00m" && days[3] === "1h 00m" && days[7] === "5h 00m", days);
     const head = await p.textContent(".sess-head .grp-name");
     check("week title names the previous week", /Week of/.test(head), head);
     await shot(p, "weeks");
@@ -319,6 +321,83 @@ const shot = async (page, name) => { if (shots) await page.screenshot({path: pat
     check("timer column fits without scrolling at 2560x720", fits);
     check("no page errors (main)", !p.errors.length, p.errors);
     await p.close();
+  }
+
+  // 10. The timer panel's total is read live from its session's stretches.
+  {
+    const key = weekKey(day(0));
+    const sess = stretches => ({[`weeks/${key}`]: {week: key, sessions: [{id: "g1", project: "mds",
+      start: stretches[0][0], end: stretches[stretches.length - 1][1], stretches}]}});
+    const setDocs = (page, docs) => page.evaluate(docs => { for (const [k, v] of Object.entries(docs)) window.__store.set(k, v); window.__notify(); }, docs).then(() => settle(page));
+    const elapsed = async page => (await page.textContent("#now .elapsed")).replace(/\s/g, "");
+    const p = await open(browser, {clock: day(0, 11, 30), docs: {"setup/config": CONFIG,
+      ...sess([[at(0, 9, 0), at(0, 10, 0)]]),
+      "timer/running": {project: "mds", paused: true, paused_at: at(0, 10, 0), carried: 484629, session_id: "g1", session_week: key}}});
+    check("paused total comes from the session, not carried", await elapsed(p) === "1h00m", await elapsed(p));
+    await setDocs(p, sess([[at(0, 9, 0), at(0, 9, 20)]]));
+    check("editing a stretch updates the paused total", await elapsed(p) === "0h20m", await elapsed(p));
+    await setDocs(p, {"timer/running": {project: "mds", start: at(0, 11, 0), carried: 484629, session_id: "g1", session_week: key}});
+    check("running total = session + current stretch", await elapsed(p) === "0h50m", await elapsed(p));
+    await setDocs(p, sess([[at(0, 8, 0), at(0, 9, 0)], [at(0, 9, 30), at(0, 10, 0)]]));
+    check("editing a stretch updates the running total", await elapsed(p) === "2h00m", await elapsed(p));
+    await p.click('#now [data-act=pause]'); await settle(p);
+    check("pausing keeps the live total", await elapsed(p) === "2h00m", await elapsed(p));
+    check("no page errors (live total)", !p.errors.length, p.errors);
+    await p.close();
+  }
+
+  // 11. Weeks run Sunday to Saturday: the total resets after 11:59 pm Saturday.
+  {
+    const sun = sunday(new Date());
+    const sat = (h, m, s = 0) => new Date(sun.getFullYear(), sun.getMonth(), sun.getDate() - 1, h, m, s);
+    const sunAt = (h, m) => new Date(sun.getFullYear(), sun.getMonth(), sun.getDate(), h, m);
+    const key = weekKey(sat(0, 0));
+    const p = await open(browser, {clock: sat(23, 58, 30), docs: {"setup/config": CONFIG,
+      [`weeks/${key}`]: {week: key, sessions: [{id: "n1", project: "mds", start: fmt(sat(20, 0)), end: fmt(sat(22, 0))}]},
+      "timer/running": {project: "mds", start: fmt(sat(23, 0)), session_id: "n1", session_week: key}}});
+    const el = async () => (await p.textContent("#now .elapsed")).replace(/\s/g, "");
+    const rs = async () => (await p.textContent(".grp .grp-week")).split(" ")[0];
+    check("Saturday 11:58 pm total", await el() === "2h58m", await el());
+    await advance(p, 1); await settle(p);
+    check("still counting at 11:59 pm Saturday", await el() === "2h59m", await el());
+    await advance(p, 1); await settle(p);
+    check("panel total drops to 0 on Sunday", await el() === "0h00m", await el());
+    check("group total resets on Sunday", await rs() === "0m", await rs());
+    await shot(p, "sunday-reset");
+    await p.click('#now [data-act=stop]'); await settle(p);
+    await p.close();
+
+    // A session across Saturday midnight splits between the two weeks.
+    const q = await open(browser, {clock: sunAt(12, 0), docs: {"setup/config": CONFIG,
+      [`weeks/${key}`]: {week: key, sessions: [
+        {id: "x1", project: "mds", start: fmt(sat(22, 0)), end: fmt(sunAt(2, 0))},
+        {id: "x2", project: "mds", start: fmt(sat(9, 0)), end: fmt(sat(11, 0))},
+        {id: "x3", project: "meet", start: fmt(sunAt(9, 0)), end: fmt(sunAt(10, 0))}]}}});
+    const rsWeek = (await q.textContent(".grp .grp-week")).split(" of")[0].trim();
+    check("group total counts only Sunday onwards", rsWeek === "3h 00m", rsWeek);
+    await q.click("[data-act=weeks]"); await settle(q);
+    let days = await q.$$eval(".wk-day", els => els.map(e => e.textContent.replace(/\s+/g, " ").trim()));
+    check("Weeks view starts on Sunday", /^Sun /.test(days[0]) && /^Sat /.test(days[6]), days);
+    check("this week has the after-midnight part", /3h 00m/.test(days[0]) && /3h 00m/.test(days[7]), days);
+    await q.click("[data-act=week-prev]"); await settle(q);
+    days = await q.$$eval(".wk-day", els => els.map(e => e.textContent.replace(/\s+/g, " ").trim()));
+    check("last week has the before-midnight part", /4h 00m/.test(days[6]) && /4h 00m/.test(days[7]), days);
+    await shot(q, "weeks-sun-sat");
+    await q.click("[data-act=to-tasks]"); await settle(q);
+    await q.click("[data-act=sessions]"); await settle(q);
+    await q.click("[data-act=export]").catch(() => {}); await settle(q);
+    for (const r of ["week", "last-week"]) { await q.click(`[data-act=export-range][data-range="${r}"]`); await settle(q); }
+    const saved = await q.evaluate(() => window.__saved.map(x => x.filename));
+    check("this-week export is Sunday to Saturday", saved[0] === `timecard-${dayKeyOf(sun)}-to-${dayKeyOf(sunAt(24 * 6, 0))}.csv`, saved);
+    check("last-week export is Sunday to Saturday", saved[1] === `timecard-${dayKeyOf(sunAt(-24 * 7, 0))}-to-${dayKeyOf(sat(0, 0))}.csv`, saved);
+    await q.click("[data-act=cancel]").catch(() => {}); await settle(q);
+    await q.click("[data-act=clear]"); await settle(q);
+    await q.click('[data-act=clear-arm][data-scope="week"]'); await settle(q);
+    await q.click('[data-act=clear-yes][data-scope="week"]'); await settle(q);
+    const left = (await sessions(q)).map(x => x.id).sort();
+    check("Clear this week keeps Saturday's sessions", left.join() === "x1,x2", left);
+    check("no page errors (Sun–Sat)", !q.errors.length, q.errors);
+    await q.close();
   }
 
   await browser.close();

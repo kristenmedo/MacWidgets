@@ -12,6 +12,12 @@ records from a conversation. Using the page doesn't use any Claude usage.
 
 - **Start:** tap a task key. **Pause** and **Resume** keep one session, adding a
   stretch of work each time. **Stop** ends it.
+- **Weeks run Sunday to Saturday.** Every weekly number (group totals against
+  goals, the timer total, the Weeks view, "This week" and "Last week" exports,
+  Clear this week) starts again at midnight after 11:59 pm Saturday.
+- The big timer number is this week's time on the session the timer belongs to,
+  worked out from that session's saved stretches plus the one running now. Fixing
+  the session's times in Sessions > Edit changes it straight away.
 - **Change start…** (under the running timer) moves the start earlier when you
   forgot to tap the task on time. It's logged in History.
 - **Stop at an earlier time…** ends a timer you forgot, at the time you pick.
@@ -56,10 +62,14 @@ NODE_PATH=$(npm root -g) node records/tests/run.js [screenshot-folder]
 |---|---|
 | `setup/config` | groups and weekly goals, tasks (name, colour, group, due, completed, archived, started), working day |
 | `setup/meta` | date of the last full backup |
-| `timer/running` | the running or paused timer, and the session it belongs to |
+| `timer/running` | the running or paused timer, and the session it belongs to (`session_id`, `session_week`); `carried` is only a fallback total for a timer with no linked session |
 | `weeks/<monday>` | that week's sessions; each has `start`, `end` and optional `stretches`, `note`, `source`, `edited` |
 | `changes/<monday>` | the change log for edits made that week |
 | `locks/<name>` | short leases so two open copies of the page don't overwrite each other |
+
+`<monday>` keys are internal storage only; what counts towards a week is decided
+by the Sunday-to-Saturday week, so a Sunday's sessions sit in the document of the
+Monday before but count towards the week that starts that Sunday.
 
 Times are local, `YYYY-MM-DDTHH:MM:SS`. Only the page's owner can change
 records; anyone it's shared with can read them.
